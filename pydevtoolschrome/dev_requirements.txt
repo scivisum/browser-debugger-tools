@@ -1,0 +1,3 @@
+requests
+websocket-client
+cherrypy==17.4.2
