@@ -1,0 +1,19 @@
+dist: trusty
+addons:
+  chrome: stable
+language: python
+python:
+  - "2.7"
+  - "3.5"
+env:
+  global:
+    - DEFAULT_CHROME_BROWSER_PATH=google-chrome-stable
+  matrix:
+    - CONFIG=unit
+    - CONFIG=integration
+    - CONFIG=e2e
+    - PROJECT=chrome
+install:
+  - pip install -r pydevtoolschrome/dev_requirements.txt
+script:
+  - python -m unittest discover "pydevtools${PROJECT}/devtools${PROJECT}/tests/${CONFIG}tests"
