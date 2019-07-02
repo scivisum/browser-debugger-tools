@@ -1,5 +1,4 @@
 import os
-import socket
 import subprocess
 import sys
 
@@ -7,10 +6,10 @@ import time
 import unittest
 from requests import ConnectionError
 
-from devtoolstestsite.start import Server as TestSiteServer
-from devtoolsutils.lib import get_free_port
-from devtoolschrome.interface import ChromeInterface
-from devtoolschrome.interface import DevToolsTimeoutException
+from tests.e2etests.testsite.start import Server as TestSiteServer
+from browserdebuggertools.utils.lib import get_free_port
+from browserdebuggertools.chrome.interface import ChromeInterface
+from browserdebuggertools.chrome.interface import DevToolsTimeoutException
 
 
 BROWSER_PATH = os.environ.get("DEFAULT_CHROME_BROWSER_PATH", "/opt/google/chrome/chrome")
@@ -52,14 +51,6 @@ class ChromeInterfaceTest(unittest.TestCase):
 
         else:
             raise Exception("Devtools client could not connect to browser")
-
-    @staticmethod
-    def _get_free_port():
-        tcp = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        tcp.bind(('', 0))
-        addr, port = tcp.getsockname()
-        tcp.close()
-        return port
 
     def _assert_dom_complete(self, timeout=10):
 

@@ -8,14 +8,10 @@ extra = dict(
     ]
 )
 
-PACKAGES = find_packages(exclude=(
-    "devtoolstestsite",
-    "devtoolsutils",
-    "devtoolschrome.tests*"
-))
+PACKAGES = find_packages(include="browserdebuggertools*")
 
 setup(
-    name="pydevtoolschrome",
+    name="browserdebuggertools",
     version="1.0.0",
     packages=PACKAGES,
     license=open("LICENSE.txt").read(),
