@@ -1,6 +1,8 @@
 import os
 import socket
 import subprocess
+import sys
+
 import time
 import unittest
 from requests import ConnectionError
@@ -88,7 +90,10 @@ class Test_ChromeInterface_take_screenshot(ChromeInterfaceTest):
         if os.path.exists(self.file_path):
             os.remove(self.file_path)
 
-        self.expected_file_size = 5389
+        if sys.version_info >= (3, 0):
+            self.expected_file_size = 5402
+        else:
+            self.expected_file_size = 5389
 
     def test_take_screenshot_dom_complete(self):
 

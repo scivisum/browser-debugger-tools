@@ -47,7 +47,7 @@ class ChromeInterface(object):
 
         response = self.execute("Page.captureScreenshot")
         imageData = response["result"]["data"]
-        with open(filepath, "w") as f:
+        with open(filepath, "wb") as f:
             f.write(b64decode(imageData))
 
     def get_document_readystate(self):
