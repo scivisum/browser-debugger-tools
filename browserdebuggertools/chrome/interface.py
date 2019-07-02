@@ -110,7 +110,6 @@ class ChromeInterface(object):
             message = self.ws.recv()
         except socket.error:
             return None
-
         message = json.loads(message)
         self._messages.append(message)
         return message
