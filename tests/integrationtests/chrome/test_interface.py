@@ -105,30 +105,6 @@ class Test_ChromeInterface_pop_messages(unittest.TestCase):
 
         expected_messages = [
             '{"method": "Network.requestWillbeSent", "params": {"key1": "value1"}}',
-            '{"method": "Network.requestWillbeSent", "params": {"key2": "value2"}}',
-            '{"method": "Network.requestWillbeSent", "params": {"key3": "value3"}}',
-            '{"method": "Network.requestWillbeSent", "params": {"key4": "value4"}}',
-            socket.error()
-        ]
-
-        ws = MagicMock()
-        ws.recv.side_effect = expected_messages + []
-        _get_ws_connection.return_value = ws
-        interface = ChromeInterface(0)
-
-        self.assertEqual([
-            {"method": "Network.requestWillbeSent", "params": {"key1": "value1"}},
-            {"method": "Network.requestWillbeSent", "params": {"key2": "value2"}},
-            {"method": "Network.requestWillbeSent", "params": {"key3": "value3"}},
-            {"method": "Network.requestWillbeSent", "params": {"key4": "value4"}}
-        ], interface.pop_messages())
-
-        self.assertEqual([], interface._messages)
-
-    def test_pop_expected_messages_after_execute(self, _get_ws_connection):
-
-        expected_messages = [
-            '{"method": "Network.requestWillbeSent", "params": {"key1": "value1"}}',
             '{"result": {}, "id": 1}',
             '{"method": "Network.requestWillbeSent", "params": {"key2": "value2"}}',
             '{"result": {}, "id": 2}',
