@@ -19,7 +19,7 @@ In a python console, you can connect to the remote debugging port and enable the
 The client provides some devtools interface methods, for example:
 ```
 >> with self.devtools_client.set_timeout(10):
-   ... self.devtools_client.take_screenshot("/tmp")
+   ... self.devtools_client.take_screenshot("/tmp/screenshot.png")
 ```
 
 Or more generally you can call remote methods according to the devtools protocol spec (https://chromedevtools.github.io/devtools-protocol/tot/Network), for example
