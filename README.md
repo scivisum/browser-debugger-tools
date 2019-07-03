@@ -26,5 +26,4 @@ Or more generally you can call remote methods according to the devtools protocol
 ```
 >> self.devtools_client.execute("Emulation.enable")
 >> self.devtools_client.execute("Emulation.setGeolocationOverride", args={"latitude": 20, "longitude": 35})
->> Emulation.enable()
 ````
