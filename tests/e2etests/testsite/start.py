@@ -29,7 +29,7 @@ class TestSite(object):
         if response_time:
             time.sleep(int(response_time))
 
-        return "var = 'foo';"
+        return "'foo';"
 
 
 class Server(object):
