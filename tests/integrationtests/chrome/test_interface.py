@@ -22,12 +22,12 @@ class Test_ChromeInterface__init__(unittest.TestCase):
                                '{"result": {}, "id": 2}', '{}', '{}', '{}', '{}',
                                '{"result": {}, "id": 3}', '{}']
         _get_ws_connection.return_value = ws
-        interface = ChromeInterface(0, enable_name_spaces=["Network", "Page", "Runtime"])
+        interface = ChromeInterface(0)
 
         ws.send.assert_has_calls([
-            call('{"params": {}, "id": 1, "method": "Network.enable"}'),
-            call('{"params": {}, "id": 2, "method": "Page.enable"}'),
-            call('{"params": {}, "id": 3, "method": "Runtime.enable"}')
+            call('{"id": 1, "method": "Page.enable", "params": {}}'),
+            call('{"id": 2, "method": "Network.enable", "params": {}}'),
+            call('{"id": 3, "method": "Runtime.enable", "params": {}}')
         ])
 
         self.assertEqual(9, ws.recv.call_count)
@@ -46,7 +46,7 @@ class Test_ChromeInterface_take_screenshot(unittest.TestCase):
 
     def test_take_screenshot(self, execute):
 
-        exepected_bytes = bytes("hello_world")
+        exepected_bytes = bytes("hello_world".encode("utf-8"))
         execute.return_value = {"result": {"data": b64encode(exepected_bytes)}}
         interface = ChromeInterface(0)
 
@@ -68,15 +68,26 @@ class Test_ChromeInterface_set_timeout(unittest.TestCase):
 
     def test_timeout_exception_raised(self, _get_ws_connection):
 
-        ws = MagicMock()
-        ws.recv.return_value = '{}'
+        class MockWS(MagicMock):
+
+            def __init__(self, *args, **kwargs):
+                super(MockWS, self).__init__(*args, **kwargs)
+                self.next_result_id = 0
+
+            def recv(self):
+
+                if self.next_result_id < 3:
+                    self.next_result_id += 1
+                return '{"result": {}, "id": %s}' % self.next_result_id
+
+        ws = MockWS()
         _get_ws_connection.return_value = ws
         interface = ChromeInterface(0)
 
         start = time.time()
         with self.assertRaises(DevToolsTimeoutException):
             with interface.set_timeout(3):
-                interface.execute("Something")
+                interface.execute("Something", "Else")
 
         elapsed = time.time() - start
         self.assertGreaterEqual(elapsed, 2.9)
@@ -90,10 +101,12 @@ class Test_ChromeInterface_set_timeout(unittest.TestCase):
         _get_ws_connection.return_value = ws
         interface = ChromeInterface(0)
 
-        with interface.set_timeout(None):
-            interface.execute("Something")
+        _wait_for_result.assert_has_calls([call()] * 3)
 
-        _wait_for_result.assert_not_called()
+        with interface.set_timeout(None):
+            interface.execute("Something", "Else")
+
+        _wait_for_result.assert_has_calls([call()] * 3)
 
 
 @patch("browserdebuggertools.chrome.interface.websocket", new=MagicMock())
@@ -104,36 +117,44 @@ class Test_ChromeInterface_pop_messages(unittest.TestCase):
     def test_pop_expected_messages(self, _get_ws_connection):
 
         expected_messages = [
-            '{"method": "Network.requestWillbeSent", "params": {"key1": "value1"}}',
             '{"result": {}, "id": 1}',
-            '{"method": "Network.requestWillbeSent", "params": {"key2": "value2"}}',
             '{"result": {}, "id": 2}',
-            '{"method": "Network.requestWillbeSent", "params": {"key3": "value3"}}',
             '{"result": {}, "id": 3}',
+            '{"method": "Network.requestWillbeSent", "params": {"key1": "value1"}}',
+            '{"result": {}, "id": 4}',
+            '{"method": "Network.requestWillbeSent", "params": {"key2": "value2"}}',
+            '{"result": {}, "id": 5}',
+            '{"method": "Network.requestWillbeSent", "params": {"key3": "value3"}}',
+            '{"result": {}, "id": 6}',
             '{"method": "Network.requestWillbeSent", "params": {"key4": "value4"}}',
             socket.error()
         ]
 
         ws = MagicMock()
-        ws.recv.side_effect = expected_messages + []
+        ws.recv.side_effect = expected_messages
         _get_ws_connection.return_value = ws
         interface = ChromeInterface(0)
 
         for _ in range(3):
-            interface.execute("Something")
+            interface.execute("Something", "Else")
+
+        messages = interface.pop_messages()
 
         self.assertEqual([
-            {"method": "Network.requestWillbeSent", "params": {"key1": "value1"}},
             {"result": {}, "id": 1},
-            {"method": "Network.requestWillbeSent", "params": {"key2": "value2"}},
             {"result": {}, "id": 2},
-            {"method": "Network.requestWillbeSent", "params": {"key3": "value3"}},
             {"result": {}, "id": 3},
+            {"method": "Network.requestWillbeSent", "params": {"key1": "value1"}},
+            {"result": {}, "id": 4},
+            {"method": "Network.requestWillbeSent", "params": {"key2": "value2"}},
+            {"result": {}, "id": 5},
+            {"method": "Network.requestWillbeSent", "params": {"key3": "value3"}},
+            {"result": {}, "id": 6},
             {"method": "Network.requestWillbeSent", "params": {"key4": "value4"}},
-        ], interface.pop_messages())
+        ], messages)
 
         self.assertEqual([], interface._messages)
-        self.assertEqual(3, interface._next_result_id)
+        self.assertEqual(6, interface._next_result_id)
 
 
 if __name__ == "__main__":
