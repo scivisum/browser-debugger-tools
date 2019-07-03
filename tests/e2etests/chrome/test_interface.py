@@ -1,9 +1,11 @@
 import os
 import subprocess
 import sys
-
+import shutil
 import time
 import unittest
+import tempfile
+
 from requests import ConnectionError
 
 from tests.e2etests.testsite.start import Server as TestSiteServer
@@ -13,12 +15,14 @@ from browserdebuggertools.chrome.interface import DevToolsTimeoutException
 
 
 BROWSER_PATH = os.environ.get("DEFAULT_CHROME_BROWSER_PATH", "/opt/google/chrome/chrome")
+TEMP = tempfile.gettempdir()
 
 
 class ChromeInterfaceTest(unittest.TestCase):
 
     testSite = None
     browser = None
+    browser_cache_dir = TEMP + "/ChromeInterfaceTest_%s" % (time.time() * 1000)
     devtools_client = None
 
     @classmethod
@@ -32,7 +36,8 @@ class ChromeInterfaceTest(unittest.TestCase):
         cls.browser = subprocess.Popen([
             BROWSER_PATH,
             "--remote-debugging-port=%s" % devtools_port,
-            "--headless"
+            "--headless",
+            "--user-data-dir=%s" % cls.browser_cache_dir
         ])
 
         start = time.time()
@@ -41,9 +46,7 @@ class ChromeInterfaceTest(unittest.TestCase):
             time.sleep(3)
 
             try:
-                cls.devtools_client = ChromeInterface(
-                    devtools_port, enable_name_spaces=["Network", "Page", "Runtime"]
-                )
+                cls.devtools_client = ChromeInterface(devtools_port)
                 break
 
             except ConnectionError:
@@ -70,6 +73,7 @@ class ChromeInterfaceTest(unittest.TestCase):
     def tearDownClass(cls):
         cls.devtools_client.ws.close()
         cls.browser.terminate()
+        shutil.rmtree(cls.browser_cache_dir)
         cls.testSite.stop()
 
 
@@ -81,18 +85,13 @@ class Test_ChromeInterface_take_screenshot(ChromeInterfaceTest):
         if os.path.exists(self.file_path):
             os.remove(self.file_path)
 
-        if sys.version_info >= (3, 0):
-            self.expected_file_size = 5402
-        else:
-            self.expected_file_size = 5389
-
     def test_take_screenshot_dom_complete(self):
 
         self.devtools_client.navigate(url="http://localhost:%s" % self.testSite.port)
         self._assert_dom_complete()
         self.devtools_client.take_screenshot(self.file_path)
         self.assertTrue(os.path.exists(self.file_path))
-        self.assertEqual(self.expected_file_size, os.path.getsize(self.file_path))
+        self.assertEqual(5402, os.path.getsize(self.file_path))
 
     def test_take_screenshot_incomplete_main_exchange(self):
         with self.devtools_client.set_timeout(None):
@@ -101,7 +100,7 @@ class Test_ChromeInterface_take_screenshot(ChromeInterfaceTest):
             )
         self.devtools_client.take_screenshot(self.file_path)
         self.assertTrue(os.path.exists(self.file_path))
-        self.assertEqual(self.expected_file_size, os.path.getsize(self.file_path))
+        self.assertEqual(5402, os.path.getsize(self.file_path))
 
     def test_take_screenshot_incomplete_head_component(self):
 

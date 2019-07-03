@@ -122,7 +122,7 @@ class ChromeInterface(object):
         self._next_result_id += 1
         self.ws.send(json.dumps({
             "id": self._next_result_id, "method": "{}.{}".format(domain, method), "params": args
-        }))
+        }, sort_keys=True))
 
         if self.async:
             return None

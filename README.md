@@ -1,4 +1,4 @@
-# browser-debugger-tools
+# browser-debugger-tools [![Build Status](https://travis-ci.org/scivisum/browser-debugger-tools.svg?branch=master)](https://travis-ci.org/scivisum/browser-debugger-tools)
 ## Overview
 The purpose is to provide a python client to connect to the debugger tools of a web-browser.
 
