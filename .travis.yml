@@ -13,6 +13,6 @@ env:
     - CONFIG=integration
     - CONFIG=e2e
 install:
-  - pip install -r pydevtoolschrome/dev_requirements.txt
+  - pip install -r dev_requirements.txt
 script:
   - ./scripts/travis.sh -t $CONFIG
