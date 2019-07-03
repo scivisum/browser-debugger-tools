@@ -85,18 +85,13 @@ class Test_ChromeInterface_take_screenshot(ChromeInterfaceTest):
         if os.path.exists(self.file_path):
             os.remove(self.file_path)
 
-        if sys.version_info >= (3, 0):
-            self.expected_file_size = 5402
-        else:
-            self.expected_file_size = 5389
-
     def test_take_screenshot_dom_complete(self):
 
         self.devtools_client.navigate(url="http://localhost:%s" % self.testSite.port)
         self._assert_dom_complete()
         self.devtools_client.take_screenshot(self.file_path)
         self.assertTrue(os.path.exists(self.file_path))
-        self.assertEqual(self.expected_file_size, os.path.getsize(self.file_path))
+        self.assertEqual(5402, os.path.getsize(self.file_path))
 
     def test_take_screenshot_incomplete_main_exchange(self):
         with self.devtools_client.set_timeout(None):
@@ -105,7 +100,7 @@ class Test_ChromeInterface_take_screenshot(ChromeInterfaceTest):
             )
         self.devtools_client.take_screenshot(self.file_path)
         self.assertTrue(os.path.exists(self.file_path))
-        self.assertEqual(self.expected_file_size, os.path.getsize(self.file_path))
+        self.assertEqual(5402, os.path.getsize(self.file_path))
 
     def test_take_screenshot_incomplete_head_component(self):
 
