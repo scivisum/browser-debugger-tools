@@ -1,4 +1,4 @@
 requests
 mock
-websocket-client
+websocket-client==0.56
 cherrypy==17.4.2
