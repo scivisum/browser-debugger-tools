@@ -12,8 +12,7 @@ env:
     - CONFIG=unit
     - CONFIG=integration
     - CONFIG=e2e
-    - PROJECT=chrome
 install:
   - pip install -r pydevtoolschrome/dev_requirements.txt
 script:
-  - python -m unittest discover "pydevtools${PROJECT}/devtools${PROJECT}/tests/${CONFIG}tests"
+  - ./scripts/travis.sh -t $CONFIG
