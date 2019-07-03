@@ -1,12 +1,15 @@
 import contextlib
-import copy
 import json
 import socket
 import time
+import logging
 from base64 import b64decode
 
 import requests
 import websocket
+
+
+logging.basicConfig(format='%(levelname)s:%(message)s')
 
 
 class DevToolsTimeoutException(Exception):
@@ -17,8 +20,8 @@ class ChromeInterface(object):
 
     CONN_TIMEOUT = 15  # Connection timeout
 
-    def __init__(self, port, timeout=30, enable_name_spaces=None):
-
+    def __init__(self, port, timeout=30, domains=None):
+        
         self._messages = []
         self._next_result_id = 0
         self.timeout = timeout  # Timeout on method call
@@ -26,9 +29,13 @@ class ChromeInterface(object):
 
         self.ws = self._get_ws_connection()
 
-        if enable_name_spaces:
-            for namespace in enable_name_spaces:
-                self.execute("%s.enable" % namespace)
+        if not domains:
+            domains = []
+
+        domains += ["Page", "Network", "Runtime"]
+
+        for domain in domains:
+            self.enable_domain(domain)
 
     def __del__(self):
         if hasattr(self, "ws") and self.ws:
@@ -36,23 +43,27 @@ class ChromeInterface(object):
 
     def close(self):
         self.ws.close()
+            
+    def enable_domain(self, domain):
+        self.execute(domain, "enable")
+        logging.info("Domain {} has been enabled".format(domain))
 
     def navigate(self, url):
 
-        self.execute("Page.navigate", {
+        self.execute("Page", "navigate", {
             "url": url
         })
 
     def take_screenshot(self, filepath):
 
-        response = self.execute("Page.captureScreenshot")
+        response = self.execute("Page", "captureScreenshot")
         imageData = response["result"]["data"]
         with open(filepath, "wb") as f:
             f.write(b64decode(imageData))
 
     def get_document_readystate(self):
 
-        response = self.execute("Runtime.evaluate", {"expression": "document.readyState"})
+        response = self.execute("Runtime", "evaluate", {"expression": "document.readyState"})
         return response["result"]["result"]["value"]
 
     def pop_messages(self):
@@ -60,18 +71,22 @@ class ChromeInterface(object):
         while self._read_socket():
             pass
 
-        messages = copy.deepcopy(self._messages)
+        messages = self._messages
         self._messages = []
         return messages
 
-    def execute(self, method, args=None):
+    def execute(self, domain, method, args=None):
+
+        if method == "disable":
+            logging.warning("{} domain has been disabled, "
+                            "some functionality may not work as expected".format(domain))
 
         if not args:
             args = {}
 
         self._next_result_id += 1
         self.ws.send(json.dumps({
-            "id": self._next_result_id, "method": method, "params": args
+            "id": self._next_result_id, "method": "{}.{}".format(domain, method), "params": args
         }))
 
         if self.timeout is not None:
