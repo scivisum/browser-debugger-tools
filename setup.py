@@ -15,6 +15,8 @@ setup(
     version="1.0.0",
     packages=PACKAGES,
     license=open("LICENSE.txt").read(),
-    long_description=open('README.md').read(),
-    long_description_content_type='text/markdown'
+    long_description=open("README.md").read(),
+    long_description_content_type="text/markdown",
+    url="https://github.com/scivisum/browser-debugger-tools",
+    author="SciVisum LTD"
 )
