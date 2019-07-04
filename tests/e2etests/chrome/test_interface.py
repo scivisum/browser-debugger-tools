@@ -1,10 +1,9 @@
 import os
 import subprocess
-import sys
 import shutil
 import time
-import unittest
 import tempfile
+from unittest import TestCase
 
 from requests import ConnectionError
 
@@ -18,7 +17,7 @@ BROWSER_PATH = os.environ.get("DEFAULT_CHROME_BROWSER_PATH", "/opt/google/chrome
 TEMP = tempfile.gettempdir()
 
 
-class ChromeInterfaceTest(unittest.TestCase):
+class ChromeInterfaceTest(TestCase):
 
     testSite = None
     browser = None
@@ -91,7 +90,7 @@ class Test_ChromeInterface_take_screenshot(ChromeInterfaceTest):
         self._assert_dom_complete()
         self.devtools_client.take_screenshot(self.file_path)
         self.assertTrue(os.path.exists(self.file_path))
-        self.assertEqual(5402, os.path.getsize(self.file_path))
+        self.assertTrue(os.path.getsize(self.file_path) >= 5000)
 
     def test_take_screenshot_incomplete_main_exchange(self):
         with self.devtools_client.run_async():
@@ -100,7 +99,7 @@ class Test_ChromeInterface_take_screenshot(ChromeInterfaceTest):
             )
         self.devtools_client.take_screenshot(self.file_path)
         self.assertTrue(os.path.exists(self.file_path))
-        self.assertEqual(5402, os.path.getsize(self.file_path))
+        self.assertTrue(os.path.getsize(self.file_path) >= 5000)
 
     def test_take_screenshot_incomplete_head_component(self):
 
@@ -156,7 +155,3 @@ class Test_ChromeInterface_get_document_readystate(ChromeInterfaceTest):
             self.devtools_client.navigate(url="http://localhost:%s" % self.testSite.port)
             self._assert_dom_complete()
             self.assertEqual("complete", self.devtools_client.get_document_readystate())
-
-
-if __name__ == "__main__":
-    unittest.main()
