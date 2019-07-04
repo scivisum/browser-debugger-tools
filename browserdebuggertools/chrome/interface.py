@@ -41,10 +41,11 @@ class ChromeInterface(object):
 
         self.port = port
         self.timeout = timeout
+        self.async = False
+
         self._messages = []
         self._next_result_id = 0
-        self.async = False
-        self._ws = None
+        self.ws = self._get_ws_connection()
 
         if not domains:
             domains = []
@@ -137,6 +138,15 @@ class ChromeInterface(object):
         finally:
             self.async = False
 
+    @contextlib.contextmanager
+    def set_timeout(self, value):
+        _timeout = self.timeout
+        self.timeout = value
+        try:
+            yield
+        finally:
+            self.timeout = _timeout
+
     def _wait_for_result(self):
         start = time.time()
         while (time.time() - start) < self.timeout:
@@ -147,19 +157,14 @@ class ChromeInterface(object):
             "Reached timeout limit of {}, waiting for a response message".format(self.timeout)
         )
 
-    @property
-    def ws(self):
-        if not self._ws:
-
-            response = requests.get(
-                'http://localhost:{}/json'.format(self.port), timeout=self.CONN_TIMEOUT
-            )
-            wsurl = json.loads(response.text)[-1]['webSocketDebuggerUrl']
-            ws = websocket.create_connection(wsurl, timeout=self.CONN_TIMEOUT)
-            ws.settimeout(0)  # Don't wait for new messages
-            self._ws = ws
-
-        return self._ws
+    def _get_ws_connection(self):
+        response = requests.get(
+            'http://localhost:{}/json'.format(self.port), timeout=self.CONN_TIMEOUT
+        )
+        wsurl = json.loads(response.text)[-1]['webSocketDebuggerUrl']
+        ws = websocket.create_connection(wsurl, timeout=self.CONN_TIMEOUT)
+        ws.settimeout(0)  # Don't wait for new messages
+        return ws
 
     def _read_socket(self):
         """ Reads and cache messages.

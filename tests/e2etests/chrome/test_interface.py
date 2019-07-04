@@ -94,7 +94,7 @@ class Test_ChromeInterface_take_screenshot(ChromeInterfaceTest):
         self.assertEqual(5402, os.path.getsize(self.file_path))
 
     def test_take_screenshot_incomplete_main_exchange(self):
-        with self.devtools_client.set_timeout(None):
+        with self.devtools_client.run_async():
             self.devtools_client.navigate(
                 url="http://localhost:%s?main_exchange_response_time=10" % self.testSite.port
             )
@@ -104,7 +104,7 @@ class Test_ChromeInterface_take_screenshot(ChromeInterfaceTest):
 
     def test_take_screenshot_incomplete_head_component(self):
 
-        with self.devtools_client.set_timeout(None):
+        with self.devtools_client.run_async():
             self.devtools_client.navigate(
                 url="http://localhost:%s?head_component_response_time=30"
                     % self.testSite.port
@@ -133,7 +133,7 @@ class Test_ChromeInterface_get_document_readystate(ChromeInterfaceTest):
         self.assertEqual("complete", self.devtools_client.get_document_readystate())
 
     def test_take_screenshot_incomplete_main_exchange(self):
-        with self.devtools_client.set_timeout(None):
+        with self.devtools_client.run_async():
             self.devtools_client.navigate(
                 url="http://localhost:%s?main_exchange_response_time=10" % self.testSite.port
             )
@@ -143,7 +143,7 @@ class Test_ChromeInterface_get_document_readystate(ChromeInterfaceTest):
 
     def test_take_screenshot_incomplete_head_component(self):
 
-        with self.devtools_client.set_timeout(None):
+        with self.devtools_client.run_async():
             self.devtools_client.navigate(
                 url="http://localhost:%s?head_component_response_time=30"
                     % self.testSite.port
