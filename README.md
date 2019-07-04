@@ -13,7 +13,7 @@ $ google-chrome-stable --remote-debugging-port=9899
 
 In a python console, you can connect to the remote debugging port and enable the Page domain.
 ```
->> self.devtools_client = ChromeInterface(9899, enable_name_spaces="Page")
+>> self.devtools_client = ChromeInterface(9899, domains=["Page"])
 ```
 
 The client provides some devtools interface methods, for example:
@@ -24,6 +24,6 @@ The client provides some devtools interface methods, for example:
 
 Or more generally you can call remote methods according to the devtools protocol spec (https://chromedevtools.github.io/devtools-protocol/tot/Network), for example
 ```
->> self.devtools_client.execute("Emulation.enable")
->> self.devtools_client.execute("Emulation.setGeolocationOverride", args={"latitude": 20, "longitude": 35})
+>> self.devtools_client.execute(domain="Emulation", method="enable")
+>> self.devtools_client.execute("Emulation", "setGeolocationOverride", args={"latitude": 20, "longitude": 35})
 ````
