@@ -18,5 +18,6 @@ setup(
     long_description=open("README.md").read(),
     long_description_content_type="text/markdown",
     url="https://github.com/scivisum/browser-debugger-tools",
-    author="SciVisum LTD"
+    author="SciVisum LTD",
+    author_email="rd@scivisum.co.uk"
 )
