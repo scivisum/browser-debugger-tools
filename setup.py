@@ -1,12 +1,11 @@
 from setuptools import setup, find_packages
 
 
-extra = dict(
-    install_requires=[
+requires = [
         "requests",
-        "websocket",
-    ]
-)
+        "websocket-client",
+]
+
 
 PACKAGES = find_packages(include="browserdebuggertools*")
 
@@ -14,6 +13,7 @@ setup(
     name="browserdebuggertools",
     version="1.0.0",
     packages=PACKAGES,
+    install_requires=requires,
     license="GNU General Public License v3",
     description="A client which calls remote web browser debugger methods",
     long_description_content_type="text/markdown",
