@@ -1,4 +1,6 @@
-dist: trusty
+dist: xenial
+services:
+  - xvfb
 addons:
   chrome: stable
 language: python
