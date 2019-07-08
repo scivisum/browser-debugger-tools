@@ -89,7 +89,7 @@ class HeadlessChromeInterfaceTest(ChromeInterfaceTest):
     headless = True
 
 
-class ChromeInterface_take_screenshot(TestCase):
+class ChromeInterface_take_screenshot(object):
 
     def setUp(self):
 
@@ -137,18 +137,18 @@ class ChromeInterface_take_screenshot(TestCase):
 
 
 class Test_ChromeInterface_take_screenshot_headed(
-    HeadedChromeInterfaceTest, ChromeInterface_take_screenshot
+    HeadedChromeInterfaceTest, ChromeInterface_take_screenshot, TestCase
 ):
     pass
 
 
 class Test_ChromeInterface_take_screenshot_headless(
-    HeadlessChromeInterfaceTest, ChromeInterface_take_screenshot
+    HeadlessChromeInterfaceTest, ChromeInterface_take_screenshot, TestCase
 ):
     pass
 
 
-class ChromeInterface_get_document_readystate(TestCase):
+class ChromeInterface_get_document_readystate(object):
 
     def test_get_ready_state_dom_complete(self):
 
@@ -183,12 +183,12 @@ class ChromeInterface_get_document_readystate(TestCase):
 
 
 class Test_ChromeInterface_get_document_readystate_headed(
-    HeadedChromeInterfaceTest, ChromeInterface_get_document_readystate
+    HeadedChromeInterfaceTest, ChromeInterface_get_document_readystate, TestCase
 ):
     pass
 
 
 class Test_ChromeInterface_get_document_readystate_headless(
-    HeadlessChromeInterfaceTest, ChromeInterface_get_document_readystate
+    HeadlessChromeInterfaceTest, ChromeInterface_get_document_readystate, TestCase
 ):
     pass
