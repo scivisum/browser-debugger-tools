@@ -12,8 +12,12 @@ import websocket
 logging.basicConfig(format='%(levelname)s:%(message)s')
 
 
-class DevToolsTimeoutException(Exception):
-    """"""
+class DevToolsException(Exception):
+    pass
+
+
+class DevToolsTimeoutException(DevToolsException):
+    pass
 
 
 class ChromeInterface(object):
@@ -64,7 +68,7 @@ class ChromeInterface(object):
 
     def close(self):
         self.ws.close()
-            
+
     def enable_domain(self, domain):
         self.execute(domain, "enable")
         logging.info("Domain {} has been enabled".format(domain))
@@ -158,10 +162,16 @@ class ChromeInterface(object):
         )
 
     def _get_ws_connection(self):
-        response = requests.get(
+        """ Connects to an available tab in the browser.
+        """
+        targets = requests.get(
             'http://localhost:{}/json'.format(self.port), timeout=self.CONN_TIMEOUT
-        )
-        wsurl = json.loads(response.text)[-1]['webSocketDebuggerUrl']
+        ).json()
+        logging.debug(targets)
+        tabs = [target for target in targets if target['type'] == 'page']
+        if not tabs:
+            raise DevToolsException('There is no tab to connect to.')
+        wsurl = tabs[0]['webSocketDebuggerUrl']
         ws = websocket.create_connection(wsurl, timeout=self.CONN_TIMEOUT)
         ws.settimeout(0)  # Don't wait for new messages
         return ws

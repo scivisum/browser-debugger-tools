@@ -17,7 +17,7 @@ BROWSER_PATH = os.environ.get("DEFAULT_CHROME_BROWSER_PATH", "/opt/google/chrome
 TEMP = tempfile.gettempdir()
 
 
-class ChromeInterfaceTest(TestCase):
+class ChromeInterfaceTest(object):
 
     testSite = None
     browser = None
@@ -35,8 +35,10 @@ class ChromeInterfaceTest(TestCase):
         cls.browser = subprocess.Popen([
             BROWSER_PATH,
             "--remote-debugging-port=%s" % devtools_port,
-            "--headless",
-            "--user-data-dir=%s" % cls.browser_cache_dir
+            "--no-default-browser-check",
+            "--headless" if cls.headless else "",
+            "--user-data-dir=%s" % cls.browser_cache_dir,
+            "--no-first-run",
         ])
 
         start = time.time()
@@ -71,12 +73,23 @@ class ChromeInterfaceTest(TestCase):
     @classmethod
     def tearDownClass(cls):
         cls.devtools_client.ws.close()
-        cls.browser.terminate()
+        cls.browser.kill()
+        time.sleep(3)
         shutil.rmtree(cls.browser_cache_dir)
         cls.testSite.stop()
 
 
-class Test_ChromeInterface_take_screenshot(ChromeInterfaceTest):
+class HeadedChromeInterfaceTest(ChromeInterfaceTest):
+
+    headless = False
+
+
+class HeadlessChromeInterfaceTest(ChromeInterfaceTest):
+
+    headless = True
+
+
+class ChromeInterface_take_screenshot(object):
 
     def setUp(self):
 
@@ -123,7 +136,19 @@ class Test_ChromeInterface_take_screenshot(ChromeInterfaceTest):
             os.remove(self.file_path)
 
 
-class Test_ChromeInterface_get_document_readystate(ChromeInterfaceTest):
+class Test_ChromeInterface_take_screenshot_headed(
+    HeadedChromeInterfaceTest, ChromeInterface_take_screenshot, TestCase
+):
+    pass
+
+
+class Test_ChromeInterface_take_screenshot_headless(
+    HeadlessChromeInterfaceTest, ChromeInterface_take_screenshot, TestCase
+):
+    pass
+
+
+class ChromeInterface_get_document_readystate(object):
 
     def test_get_ready_state_dom_complete(self):
 
@@ -155,3 +180,15 @@ class Test_ChromeInterface_get_document_readystate(ChromeInterfaceTest):
             self.devtools_client.navigate(url="http://localhost:%s" % self.testSite.port)
             self._assert_dom_complete()
             self.assertEqual("complete", self.devtools_client.get_document_readystate())
+
+
+class Test_ChromeInterface_get_document_readystate_headed(
+    HeadedChromeInterfaceTest, ChromeInterface_get_document_readystate, TestCase
+):
+    pass
+
+
+class Test_ChromeInterface_get_document_readystate_headless(
+    HeadlessChromeInterfaceTest, ChromeInterface_get_document_readystate, TestCase
+):
+    pass
