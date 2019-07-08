@@ -74,6 +74,7 @@ class ChromeInterfaceTest(object):
     def tearDownClass(cls):
         cls.devtools_client.ws.close()
         cls.browser.kill()
+        time.sleep(3)
         shutil.rmtree(cls.browser_cache_dir)
         cls.testSite.stop()
 
@@ -181,13 +182,13 @@ class ChromeInterface_get_document_readystate(TestCase):
             self.assertEqual("complete", self.devtools_client.get_document_readystate())
 
 
-class Test_ChromeInterface_take_screenshot_headed(
+class Test_ChromeInterface_get_document_readystate_headed(
     HeadedChromeInterfaceTest, ChromeInterface_get_document_readystate
 ):
     pass
 
 
-class Test_ChromeInterface_take_screenshot_headless(
+class Test_ChromeInterface_get_document_readystate_headless(
     HeadlessChromeInterfaceTest, ChromeInterface_get_document_readystate
 ):
     pass
