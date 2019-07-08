@@ -63,7 +63,7 @@ class ChromeInterface(object):
         """ Attempts to close the websocket and free up resources,
             prefer to call self.close() explicitly whenever possible.
         """
-        if hasattr(self, "_ws") and self._ws:
+        if hasattr(self, "ws") and self.ws:
             self.close()
 
     def close(self):

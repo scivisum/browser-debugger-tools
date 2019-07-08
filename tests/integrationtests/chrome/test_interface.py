@@ -90,8 +90,8 @@ class Test_ChromeInterface_set_timeout(unittest.TestCase):
                 interface.execute("Something", "Else")
 
         elapsed = time.time() - start
-        self.assertGreaterEqual(elapsed, 2.9)
-        self.assertLessEqual(elapsed, 3.1)
+        self.assertGreaterEqual(elapsed, 2.5)
+        self.assertLessEqual(elapsed, 3.4)
 
     @patch("browserdebuggertools.chrome.interface.ChromeInterface._wait_for_result")
     def test_no_timeout_exception_raise(self, _wait_for_result,  _get_ws_connection):
