@@ -3,7 +3,15 @@ import socket
 
 from mock import patch, MagicMock, call
 
-from browserdebuggertools.chrome.interface import ChromeInterface, DevToolsTimeoutException
+from browserdebuggertools.chrome.interface import ChromeInterface, DevToolsTimeoutException, \
+    DevToolsException
+
+
+class MockChromeInterface(ChromeInterface):
+
+    def __init__(self, port, timeout=30, domains=None):
+        self.port = port
+
 
 @patch("browserdebuggertools.chrome.interface.ChromeInterface.enable_domain")
 @patch("browserdebuggertools.chrome.interface.ChromeInterface._get_ws_connection", MagicMock())
@@ -154,6 +162,21 @@ class Test_ChromeInterface__wait_for_result(unittest.TestCase):
 
         with self.assertRaises(DevToolsTimeoutException):
             interface._wait_for_result()
+
+
+@patch("browserdebuggertools.chrome.interface.requests")
+@patch("browserdebuggertools.chrome.interface.websocket")
+class Test_ChromeInterface__get_ws_connection(unittest.TestCase):
+
+    def test_no_tabs(self, websocket, requests):
+        requests.get().json.return_value = [{
+            "type": "iframe",
+            "webSocketDebuggerUrl": "ws://localhost:1234/devtools/page/test"
+        }]
+        interface = MockChromeInterface(1234)
+
+        with self.assertRaises(DevToolsException):
+            interface._get_ws_connection()
 
 
 @patch("browserdebuggertools.chrome.interface.json")
