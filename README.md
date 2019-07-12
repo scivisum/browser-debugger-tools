@@ -1,4 +1,7 @@
-# browser-debugger-tools [![Build Status](https://travis-ci.org/scivisum/browser-debugger-tools.svg?branch=master)](https://travis-ci.org/scivisum/browser-debugger-tools)
+# browser-debugger-tools
+[![Build Status](https://img.shields.io/travis/scivisum/browser-debugger-tools/master.svg?style=flat-square)](https://travis-ci.org/scivisum/browser-debugger-tools)
+[![PyPI](https://img.shields.io/pypi/v/browserdebuggertools.svg?style=flat-square)](https://pypi.python.org/pypi/browserdebuggertools)
+![License](https://img.shields.io/pypi/l/browserdebuggertools.svg?style=flat-square)
 ## Overview
 The purpose is to provide a python client to connect to the debugger tools of a web-browser.
 

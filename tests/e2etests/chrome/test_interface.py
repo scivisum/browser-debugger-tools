@@ -8,7 +8,7 @@ from unittest import TestCase
 from requests import ConnectionError
 
 from tests.e2etests.testsite.start import Server as TestSiteServer
-from browserdebuggertools.utils.lib import get_free_port
+from browserdebuggertools.utils import get_free_port
 from browserdebuggertools.chrome.interface import ChromeInterface
 from browserdebuggertools.chrome.interface import DevToolsTimeoutException
 
@@ -59,12 +59,12 @@ class ChromeInterfaceTest(object):
     def _assert_dom_complete(self, timeout=10):
 
         domComplete = False
-
+        self.devtools_client.enable_domain("Page")
         start = time.time()
         while (time.time() - start) < timeout:
-            messages = self.devtools_client.pop_messages()
-            for message in messages:
-                if message.get("method") == "Page.domContentEventFired":
+            page_events = self.devtools_client.get_events("Page")
+            for event in page_events:
+                if event.get("method") == "Page.domContentEventFired":
                     domComplete = True
                     break
 
@@ -72,7 +72,7 @@ class ChromeInterfaceTest(object):
 
     @classmethod
     def tearDownClass(cls):
-        cls.devtools_client.ws.close()
+        cls.devtools_client.quit()
         cls.browser.kill()
         time.sleep(3)
         shutil.rmtree(cls.browser_cache_dir)
@@ -106,21 +106,20 @@ class ChromeInterface_take_screenshot(object):
         self.assertTrue(os.path.getsize(self.file_path) >= 5000)
 
     def test_take_screenshot_incomplete_main_exchange(self):
-        with self.devtools_client.run_async():
-            self.devtools_client.navigate(
-                url="http://localhost:%s?main_exchange_response_time=10" % self.testSite.port
-            )
+
+        self.devtools_client.navigate(
+            url="http://localhost:%s?main_exchange_response_time=10" % self.testSite.port
+        )
         self.devtools_client.take_screenshot(self.file_path)
         self.assertTrue(os.path.exists(self.file_path))
         self.assertTrue(os.path.getsize(self.file_path) >= 5000)
 
     def test_take_screenshot_incomplete_head_component(self):
 
-        with self.devtools_client.run_async():
-            self.devtools_client.navigate(
-                url="http://localhost:%s?head_component_response_time=30"
-                    % self.testSite.port
-            )
+        self.devtools_client.navigate(
+            url="http://localhost:%s?head_component_response_time=30"
+                % self.testSite.port
+        )
 
         time.sleep(3)
 
@@ -152,26 +151,26 @@ class ChromeInterface_get_document_readystate(object):
 
     def test_get_ready_state_dom_complete(self):
 
-        self.devtools_client.navigate(url="http://localhost:%s" % self.testSite.port)
+        result_id = self.devtools_client.navigate(url="http://localhost:%s" % self.testSite.port)
+        self.devtools_client.wait_for_result(result_id)
         self._assert_dom_complete()
         self.assertEqual("complete", self.devtools_client.get_document_readystate())
 
     def test_take_screenshot_incomplete_main_exchange(self):
-        with self.devtools_client.run_async():
-            self.devtools_client.navigate(
-                url="http://localhost:%s?main_exchange_response_time=10" % self.testSite.port
-            )
-        self.devtools_client.navigate(url="http://localhost:%s" % self.testSite.port)
+        self.devtools_client.navigate(
+            url="http://localhost:%s?main_exchange_response_time=10" % self.testSite.port
+        )
+        result_id = self.devtools_client.navigate(url="http://localhost:%s" % self.testSite.port)
+        self.devtools_client.wait_for_result(result_id)
         self._assert_dom_complete()
         self.assertEqual("complete", self.devtools_client.get_document_readystate())
 
     def test_take_screenshot_incomplete_head_component(self):
 
-        with self.devtools_client.run_async():
-            self.devtools_client.navigate(
-                url="http://localhost:%s?head_component_response_time=30"
-                    % self.testSite.port
-            )
+        self.devtools_client.navigate(
+            url="http://localhost:%s?head_component_response_time=30"
+                % self.testSite.port
+        )
 
         time.sleep(3)
 

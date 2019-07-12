@@ -1,215 +1,63 @@
-import unittest
-import socket
+from unittest import TestCase
 
-from mock import patch, MagicMock, call
+from mock import patch, MagicMock
 
-from browserdebuggertools.chrome.interface import ChromeInterface, DevToolsTimeoutException, \
-    DevToolsException
+from browserdebuggertools.chrome.interface import ChromeInterface, DevToolsTimeoutException
+from browserdebuggertools.exceptions import ResultNotFoundError, DomainNotFoundError
+
+MODULE_PATH = "browserdebuggertools.chrome.interface."
 
 
 class MockChromeInterface(ChromeInterface):
 
     def __init__(self, port, timeout=30, domains=None):
-        self.port = port
+        self.timeout = timeout
+        self._socket_handler = MagicMock()
 
 
-@patch("browserdebuggertools.chrome.interface.ChromeInterface.enable_domain")
-@patch("browserdebuggertools.chrome.interface.ChromeInterface._get_ws_connection", MagicMock())
-class Test_ChromeInterface__init__(unittest.TestCase):
+class ChromeInterfaceTest(TestCase):
 
-    def test_default_domains_are_set(self, enable_domain):
-
-        call_list = [
-            call("Page"),
-            call("Network"),
-            call("Runtime")
-        ]
-
-        ChromeInterface(1234)
-
-        self.assertListEqual(call_list, enable_domain.call_args_list)
-
-    def test_extra_domains_set(self, enable_domain):
-
-        call_list = [
-            call("IO"),
-            call("Page"),
-            call("Network"),
-            call("Runtime"),
-        ]
-
-        ChromeInterface(1234, domains=["IO"])
-
-        self.assertListEqual(call_list, enable_domain.call_args_list)
-
-@patch(
-    "browserdebuggertools.chrome.interface.ChromeInterface._read_socket",
-    MagicMock(return_value=False)
-)
-@patch("browserdebuggertools.chrome.interface.ChromeInterface.enable_domain", MagicMock())
-@patch("browserdebuggertools.chrome.interface.ChromeInterface._get_ws_connection", MagicMock())
-class Test_ChromeInterface_popMessages(unittest.TestCase):
-
-    def test_cache_has_been_emptied(self):
-
-        message = {"random": "message"}
-
-        interface = ChromeInterface(1234)
-        interface._messages = [message]
-
-        interface.pop_messages()
-
-        self.assertFalse(interface._messages)
-
-    def test_messages_retrieved(self):
-
-        message = {"random": "message"}
-
-        interface = ChromeInterface(1234)
-        interface._messages = [message, message, message]
-
-        response = interface.pop_messages()
-
-        self.assertListEqual([message] * 3, response)
+    def setUp(self):
+        self.interface = MockChromeInterface(1234)
 
 
-@patch("browserdebuggertools.chrome.interface.json")
-@patch("browserdebuggertools.chrome.interface.ChromeInterface._wait_for_result")
-@patch("browserdebuggertools.chrome.interface.ChromeInterface.enable_domain", MagicMock())
-@patch("browserdebuggertools.chrome.interface.ChromeInterface._get_ws_connection", MagicMock())
-class Test_ChromeInterface_execute(unittest.TestCase):
+@patch(MODULE_PATH + "time")
+class Test_ChromeInterface_wait_for_result(ChromeInterfaceTest):
 
-    def test_parameter_convertion_to_protocol(self, wait_for_result, json):
-
-        args = {"url": "http://test.com"}
-
-        interface = ChromeInterface(1234)
-
-        interface.execute("Page", "navigate", args=args)
-
-        json.dumps.assert_called_once_with(
-            {'params': args, 'id': 1, 'method': 'Page.navigate'}, sort_keys=True
-        )
-
-    def test_no_args(self, wait_for_result, json):
-
-        interface = ChromeInterface(1234)
-
-        interface.execute("Page", "navigate")
-
-        json.dumps.assert_called_once_with(
-            {'params': {}, 'id': 1, 'method': 'Page.navigate'}, sort_keys=True
-        )
-
-    def test_message_id_increments_correctly(self, wait_for_result, json):
-
-        call_list = [
-            call({'params': {}, 'id': 1, 'method': 'Page.navigate'}, sort_keys=True),
-            call({'params': {}, 'id': 2, 'method': 'Page.navigate'}, sort_keys=True),
-        ]
-
-        interface = ChromeInterface(1234)
-
-        for i in range(2):
-            interface.execute("Page", "navigate")
-
-        self.assertListEqual(call_list, json.dumps.call_args_list)
-
-    def test_async(self, wait_for_result, json):
-
-        interface = ChromeInterface(1234)
-
-        interface.async = True
-
-        response = interface.execute("Page", "navigate")
-
-        self.assertIsNone(response)
-
-    def test_return_call(self, wait_for_result, json):  # This needs re-thinking.
-
-        interface = ChromeInterface(1234)
-
-        response = interface.execute("Page", "navigate")
-
-        self.assertEqual(wait_for_result(), response)
-
-
-@patch("browserdebuggertools.chrome.interface.time")
-@patch("browserdebuggertools.chrome.interface.ChromeInterface._read_socket")
-@patch("browserdebuggertools.chrome.interface.ChromeInterface.enable_domain", MagicMock())
-@patch("browserdebuggertools.chrome.interface.ChromeInterface._get_ws_connection", MagicMock())
-class Test_ChromeInterface__wait_for_result(unittest.TestCase):
-
-    def test(self, read_socket, time):
-
+    def test(self, time):
+        mock_result = MagicMock()
+        self.interface._socket_handler.find_result.side_effect = [mock_result]
         time.time.side_effect = [1, 2, 3]
 
-        read_socket.return_value = {"result": "text", "id": 1}
+        result = self.interface.wait_for_result(1)
 
-        interface = ChromeInterface(1234)
+        self.assertEqual(mock_result, result)
 
-        interface._next_result_id = 1
+    def test_wait(self, time):
+        mock_result = MagicMock()
+        self.interface._socket_handler.find_result.side_effect = [ResultNotFoundError, mock_result]
+        time.time.side_effect = [1, 2, 3]
 
-        result = interface._wait_for_result()
+        result = self.interface.wait_for_result(1)
 
-        self.assertEqual({"result": "text", "id": 1}, result)
+        self.assertEqual(mock_result, result)
 
-    def test_timed_out(self, read_socket, time):
-
-        time.time.side_effect = [1, 50]
-
-        interface = ChromeInterface(1234)
+    def test_timed_out(self, time):
+        self.interface.timeout = 2
+        self.interface._socket_handler.find_result.side_effect = [
+            ResultNotFoundError, ResultNotFoundError
+        ]
+        time.time.side_effect = [1, 2, 3]
 
         with self.assertRaises(DevToolsTimeoutException):
-            interface._wait_for_result()
+            self.interface.wait_for_result(1)
 
 
-@patch("browserdebuggertools.chrome.interface.requests")
-@patch("browserdebuggertools.chrome.interface.websocket")
-class Test_ChromeInterface__get_ws_connection(unittest.TestCase):
+@patch(MODULE_PATH + "ChromeInterface.execute", MagicMock())
+class Test_ChromeInterface_enable_domain(ChromeInterfaceTest):
 
-    def test_no_tabs(self, websocket, requests):
-        requests.get().json.return_value = [{
-            "type": "iframe",
-            "webSocketDebuggerUrl": "ws://localhost:1234/devtools/page/test"
-        }]
-        interface = MockChromeInterface(1234)
+    def test_invalid_domain(self):
+        self.interface.execute.return_value = {"id": 1, "error": MagicMock}
 
-        with self.assertRaises(DevToolsException):
-            interface._get_ws_connection()
-
-
-@patch("browserdebuggertools.chrome.interface.json")
-@patch("browserdebuggertools.chrome.interface.ChromeInterface.enable_domain", MagicMock())
-@patch("browserdebuggertools.chrome.interface.ChromeInterface._get_ws_connection", MagicMock())
-class Test_ChromeInterface__read_socket(unittest.TestCase):
-
-    def test_message_retrieved(self, json):
-
-        response = {"result": "text"}
-        interface = ChromeInterface(1234)
-        interface.ws.recv.return_value = response
-        json.loads.return_value = response
-
-        result = interface._read_socket()
-
-        json.loads.assert_called_once_with(response)
-        self.assertEqual(response, result)
-
-    def test_nothing_to_retrieve(self, json):
-
-        interface = ChromeInterface(1234)
-        interface.ws.recv.side_effect = [socket.error()]
-
-        self.assertIsNone(interface._read_socket())
-
-    def test_message_gets_cached(self, json):
-
-        response = {"result": "text"}
-        json.loads.return_value = response
-
-        interface = ChromeInterface(1234)
-
-        interface._read_socket()
-
-        self.assertEqual(response, interface._messages[0])
+        with self.assertRaises(DomainNotFoundError):
+            self.interface.enable_domain("InvalidDomain")

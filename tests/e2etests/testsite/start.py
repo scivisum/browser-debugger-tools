@@ -3,7 +3,7 @@ import time
 
 import cherrypy
 
-from browserdebuggertools.utils.lib import get_free_port
+from browserdebuggertools.utils import get_free_port
 
 
 class TestSite(object):

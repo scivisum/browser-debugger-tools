@@ -11,7 +11,7 @@ PACKAGES = find_packages(include="browserdebuggertools*")
 
 setup(
     name="browserdebuggertools",
-    version="1.0.1",
+    version="2.0.0",
     packages=PACKAGES,
     install_requires=requires,
     license="GNU General Public License v3",
@@ -20,5 +20,13 @@ setup(
     long_description=open("README.md").read(),
     url="https://github.com/scivisum/browser-debugger-tools",
     author="SciVisum LTD",
-    author_email="rd@scivisum.co.uk"
+    author_email="rd@scivisum.co.uk",
+    classifiers=[
+        'Intended Audience :: Developers',
+        "Programming Language :: Python",
+        "Programming Language :: Python :: 2.7",
+        "Programming Language :: Python :: 3.5",
+        "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
+        "Operating System :: OS Independent"
+    ],
 )
