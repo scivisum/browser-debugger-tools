@@ -57,7 +57,19 @@ class Test_ChromeInterface_wait_for_result(ChromeInterfaceTest):
 class Test_ChromeInterface_enable_domain(ChromeInterfaceTest):
 
     def test_invalid_domain(self):
-        self.interface.execute.return_value = {"id": 1, "error": MagicMock}
+        self.interface.execute.return_value = {"id": 1, "error": MagicMock()}
 
         with self.assertRaises(DomainNotFoundError):
             self.interface.enable_domain("InvalidDomain")
+
+
+@patch(MODULE_PATH + "ChromeInterface.execute", MagicMock())
+class Test_ChromeInterface_execute_javascript(ChromeInterfaceTest):
+
+    def test(self):
+        mock_result = MagicMock()
+        self.interface.execute.return_value = {"id": 1, "result": {"value": mock_result}}
+
+        result = self.interface.execute_javascript("document.readyState")
+
+        self.assertEqual(mock_result, result)
