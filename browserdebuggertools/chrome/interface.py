@@ -4,8 +4,9 @@ import logging
 from base64 import b64decode
 
 from browserdebuggertools.sockethandler import SocketHandler
-from browserdebuggertools.exceptions import DevToolsTimeoutException, ResultNotFoundError, \
-    DomainNotFoundError
+from browserdebuggertools.exceptions import (
+    DevToolsTimeoutException, ResultNotFoundError, DomainNotFoundError
+)
 
 logging.basicConfig(format='%(levelname)s:%(message)s')
 
@@ -160,8 +161,63 @@ class ChromeInterface(object):
         with open(filepath, "wb") as f:
             f.write(b64decode(image_data))
 
+    def stop_page_load(self):
+        return self.execute("Page", "stopLoading")
+
+    def execute_javascript(self, script):
+        result = self.execute("Runtime", "evaluate", {
+            "expression": script,
+            "returnByValue": True
+        })["result"]
+
+        return result.get("value")
+
+    def get_url(self):
+        return self.execute_javascript("document.URL")
+
     def get_document_readystate(self):
         """ Gets the document.readyState of the page.
         """
-        response = self.execute("Runtime", "evaluate", {"expression": "document.readyState"})
-        return response["result"]["value"]
+        return self.execute_javascript("document.readyState")
+
+    def get_page_source(self):
+        """ Returns a string serialization of the active document's DOM
+        """
+        return self.execute_javascript("document.documentElement.innerHTML")
+
+    def set_user_agent_override(self, user_agent):
+        """ Overriding user agent with the given string.
+        :param user_agent:
+        :return:
+        """
+        return self.execute("Network", "setUserAgentOverride", {
+            "userAgent": user_agent
+        })
+
+    def emulate_network_conditions(
+            self, offline=False, latency=-1, download_throughput=-1, upload_throughput=-1,
+            connection_type=None
+    ):
+        """
+
+        :param offline: Whether to emulate network disconnection
+        :param latency: Minimum latency from request sent to response headers (ms).
+        :param download_throughput: Maximal aggregated download throughput (bytes/sec).
+                                    -1 disables download throttling.
+        :param upload_throughput: Maximal aggregated upload throughput (bytes/sec).
+                                  -1 disables upload throttling.
+        :param connection_type: The underlying connection technology
+                                that the browser is supposedly using
+                                example values:  "cellular2g", "cellular3g", "cellular4g",
+                                "bluetooth", "ethernet", "wifi", "wimax"
+        """
+        network_conditions = {
+            "offline": offline,
+            "latency": latency,
+            "downloadThroughput": download_throughput,
+            "uploadThroughput": upload_throughput,
+        }
+        if connection_type:
+            network_conditions.update({"connectionType": connection_type})
+
+        return self.execute("Network", "emulateNetworkConditions", network_conditions)
