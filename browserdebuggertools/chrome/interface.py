@@ -195,7 +195,7 @@ class ChromeInterface(object):
         })
 
     def emulate_network_conditions(
-            self, offline=False, latency=-1, download_throughput=-1, upload_throughput=-1,
+            self, offline=False, latency=0, download_throughput=-1, upload_throughput=-1,
             connection_type=None
     ):
         """
