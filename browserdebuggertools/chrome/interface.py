@@ -53,7 +53,7 @@ class ChromeInterface(object):
             try:
                 return self._socket_handler.find_result(result_id)
             except ResultNotFoundError:
-                pass
+                time.sleep(0.5)
         raise DevToolsTimeoutException(
             "Reached timeout limit of {}, waiting for a response message".format(self.timeout)
         )
