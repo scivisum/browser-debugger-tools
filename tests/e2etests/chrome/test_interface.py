@@ -48,6 +48,7 @@ class ChromeInterfaceTest(object):
 
             try:
                 cls.devtools_client = ChromeInterface(devtools_port)
+                cls.devtools_client.enable_domain("Page")
                 break
 
             except ConnectionError:
@@ -59,7 +60,6 @@ class ChromeInterfaceTest(object):
     def _assert_dom_complete(self, timeout=10):
 
         domComplete = False
-        self.devtools_client.enable_domain("Page")
         start = time.time()
         while (time.time() - start) < timeout:
             page_events = self.devtools_client.get_events("Page")
