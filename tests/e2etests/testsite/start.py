@@ -31,6 +31,10 @@ class TestSite(object):
 
         return "'foo';"
 
+    @cherrypy.expose
+    def big_body(self, size=1000000):
+        return "T" * size
+
 
 class Server(object):
 

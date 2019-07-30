@@ -191,3 +191,48 @@ class Test_ChromeInterface_get_document_readystate_headless(
     HeadlessChromeInterfaceTest, ChromeInterface_get_document_readystate, TestCase
 ):
     pass
+
+
+class ChromeInterface_emulate_network_conditions(object):
+
+    def waitForEventWithMethod(self, method, timeout=30):
+
+        start = time.time()
+        while (time.time() - start) < timeout:
+            for event in self.devtools_client.get_events(method.split(".")[0]):
+                if event.get("method") == method:
+                    return True
+        return False
+
+    def test_took_expected_time(self):
+
+        upload = 1000000000000  # 1 terabytes / second (no limit)
+        download = 100000  # 100 kilobytes / second
+
+        self.devtools_client.enable_domain("Network")
+        self.devtools_client.emulate_network_conditions(1, download, upload)
+
+        # Page has a default of 1 megabyte response body
+        result_id = self.devtools_client.navigate(url="http://localhost:%s/big_body"
+                                                      % self.testSite.port)
+        self.devtools_client.wait_for_result(result_id)
+
+        self.assertTrue(self.waitForEventWithMethod("Network.responseReceived"))
+        # We have received the response header, now measure how long it takes to download the
+        # response body. It should take approximately 10 seconds.
+        start = time.time()
+        self.assertTrue(self.waitForEventWithMethod("Network.loadingFinished"))
+        time_taken = time.time() - start
+        self.assertEqual(10, int(round(time_taken)))
+
+
+class Test_ChromeInterface_emulate_network_conditions_headed(
+    HeadedChromeInterfaceTest, ChromeInterface_emulate_network_conditions, TestCase
+):
+    pass
+
+
+class Test_ChromeInterface_emulate_network_conditions_headless(
+    HeadlessChromeInterfaceTest, ChromeInterface_emulate_network_conditions, TestCase
+):
+    pass
