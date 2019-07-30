@@ -194,30 +194,24 @@ class ChromeInterface(object):
             "userAgent": user_agent
         })
 
-    def emulate_network_conditions(
-            self, offline=False, latency=-1, download_throughput=-1, upload_throughput=-1,
-            connection_type=None
-    ):
+    def emulate_network_conditions(self, latency, download, upload, offline=False):
+        """
+        :param latency: Minimum latency from request sent to response headers (ms).
+        :param download: Maximal aggregated download throughput (bytes/sec).
+        :param upload: Maximal aggregated upload throughput (bytes/sec).
+        :param offline: Whether to emulate network disconnection
         """
 
-        :param offline: Whether to emulate network disconnection
-        :param latency: Minimum latency from request sent to response headers (ms).
-        :param download_throughput: Maximal aggregated download throughput (bytes/sec).
-                                    -1 disables download throttling.
-        :param upload_throughput: Maximal aggregated upload throughput (bytes/sec).
-                                  -1 disables upload throttling.
-        :param connection_type: The underlying connection technology
-                                that the browser is supposedly using
-                                example values:  "cellular2g", "cellular3g", "cellular4g",
-                                "bluetooth", "ethernet", "wifi", "wimax"
-        """
+        # Note: Currently, there's a bug in the devtools protocol when disabling parameters,
+        # i.e setting download to -1, therefore we enforce that all parameters must be passed with
+        # a sensible value (bigger than 0)
+        assert min(latency, download, upload) > 0 or offline
+
         network_conditions = {
             "offline": offline,
             "latency": latency,
-            "downloadThroughput": download_throughput,
-            "uploadThroughput": upload_throughput,
+            "downloadThroughput": download,
+            "uploadThroughput": upload,
         }
-        if connection_type:
-            network_conditions.update({"connectionType": connection_type})
 
         return self.execute("Network", "emulateNetworkConditions", network_conditions)
