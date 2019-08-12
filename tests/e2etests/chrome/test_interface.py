@@ -223,7 +223,7 @@ class ChromeInterface_emulate_network_conditions(object):
         start = time.time()
         self.assertTrue(self.waitForEventWithMethod("Network.loadingFinished"))
         time_taken = time.time() - start
-        self.assertEqual(10, int(round(time_taken)))
+        self.assertIn(int(round(time_taken)), [10, 11])  # Headed browser is a bit slower
 
 
 class Test_ChromeInterface_emulate_network_conditions_headed(
