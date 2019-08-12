@@ -1,7 +1,6 @@
 import multiprocessing
-from base64 import b64decode
-
 import time
+from base64 import b64decode
 
 import cherrypy
 
@@ -63,10 +62,10 @@ class TestSite(object):
 
         if "Authorization" in cherrypy.request.headers:
 
-            this_username, this_password = tuple(
-                b64decode(cherrypy.request.headers["Authorization"].split("Basic ")[1]).split(":")
-            )
-
+            auth_string = str(cherrypy.request.headers["Authorization"])
+            secret = auth_string.split("Basic ")[1]
+            credentials = b64decode(secret).decode()
+            this_username, this_password = tuple(credentials.split(":"))
             if (this_username == authorized_username) and (this_password == authorized_password):
                 return True
         return False

@@ -254,7 +254,7 @@ class ChromeInterface_set_basic_auth(object):
 
         self.assertTrue(len(responses_received) >= 2)  # Headed browser creates extra requests
         self.assertIn(200, responses_received)
-        self.assertNotIn(401, responses_received)
+        self.assertNotIn(401, responses_received)  # Devtools genuinely doesn't report these
 
 
 class Test_ChromeInterface_set_baic_auth_headed(
