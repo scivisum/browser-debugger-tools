@@ -1,4 +1,6 @@
 import multiprocessing
+from base64 import b64decode
+
 import time
 
 import cherrypy
@@ -34,6 +36,46 @@ class TestSite(object):
     @cherrypy.expose
     def big_body(self, size=1000000):
         return "T" * size
+
+    @cherrypy.expose
+    def auth_challenge(self, authorized_username="username", authorized_password="password",
+                       response_body=None):
+
+        if self.is_authenticated(authorized_username, authorized_password):
+
+            if response_body:
+                return response_body
+
+            return """
+                <html>
+                  <head><script src="/auth_challenge?response_body=null"></script></head>
+                  <body>
+                    Authorized
+                  </body>
+                </html>
+            """
+        cherrypy.response.headers["WWW-Authenticate"] = "basic"
+        cherrypy.response.status = 401
+        return "Need to authorize"
+
+    @staticmethod
+    def is_authenticated(authorized_username, authorized_password):
+
+        if "Authorization" in cherrypy.request.headers:
+
+            this_username, this_password = tuple(
+                b64decode(cherrypy.request.headers["Authorization"].split("Basic ")[1]).split(":")
+            )
+
+            if authorized_username and this_username != authorized_username:
+                return False
+
+            if authorized_password and this_password != authorized_password:
+                return False
+
+            return True
+
+        return False
 
 
 class Server(object):

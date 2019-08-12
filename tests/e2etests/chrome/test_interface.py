@@ -236,3 +236,34 @@ class Test_ChromeInterface_emulate_network_conditions_headless(
     HeadlessChromeInterfaceTest, ChromeInterface_emulate_network_conditions, TestCase
 ):
     pass
+
+
+class ChromeInterface_set_basic_auth(object):
+
+    def test_standard_auth_page(self):
+
+        self.devtools_client.enable_domain("Network")
+        url = "http://username:password@localhost:%s/auth_challenge" % self.testSite.port
+        self.devtools_client.navigate(url=url)
+        self._assert_dom_complete()
+
+        responses_received = []
+        for event in self.devtools_client.get_events("Network"):
+            if event.get("method") == "Network.responseReceived":
+                responses_received.append(event["params"]["response"]["status"])
+
+        self.assertTrue(len(responses_received) >= 2)  # Headed browser creates extra requests
+        self.assertIn(200, responses_received)
+        self.assertNotIn(401, responses_received)
+
+
+class Test_ChromeInterface_set_baic_auth_headed(
+    HeadedChromeInterfaceTest, ChromeInterface_set_basic_auth, TestCase
+):
+    pass
+
+
+class Test_ChromeInterface_set_baic_auth_headless(
+    HeadlessChromeInterfaceTest, ChromeInterface_set_basic_auth, TestCase
+):
+    pass
