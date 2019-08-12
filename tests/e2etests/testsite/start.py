@@ -67,14 +67,8 @@ class TestSite(object):
                 b64decode(cherrypy.request.headers["Authorization"].split("Basic ")[1]).split(":")
             )
 
-            if authorized_username and this_username != authorized_username:
-                return False
-
-            if authorized_password and this_password != authorized_password:
-                return False
-
-            return True
-
+            if (this_username == authorized_username) and (this_password == authorized_password):
+                return True
         return False
 
 
