@@ -1,7 +1,7 @@
 import contextlib
 import time
 import logging
-from base64 import b64decode
+from base64 import b64decode, b64encode
 
 from browserdebuggertools.sockethandler import SocketHandler
 from browserdebuggertools.exceptions import (
@@ -215,3 +215,18 @@ class ChromeInterface(object):
         }
 
         return self.execute("Network", "emulateNetworkConditions", network_conditions)
+
+    def set_basic_auth(self, username, password):
+        """
+        Creates a basic type Authorization header from the username and password strings
+        and applies it to all requests
+        """
+        auth = "Basic " + b64encode("%s:%s" % (username, password))
+        self.set_request_headers({"Authorization": auth})
+
+    def set_request_headers(self, headers):
+        """
+        The specified headers are applied to all requests
+        :param headers: A dictionary of the form {"headerKey": "headerValue"}
+        """
+        self.execute("Network", "setExtraHTTPHeaders", {"headers": headers})
