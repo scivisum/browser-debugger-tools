@@ -67,17 +67,6 @@ class ChromeInterface(object):
           """
         return self._socket_handler.find_result(result_id)
 
-    def get_results(self):
-        """ Retrieves a dictionary containing all the results indexed by result_id
-        """
-        self._socket_handler.flush_messages()
-        return self._socket_handler.results
-
-    def clear_results(self):
-        """ Clears all results in the cache
-        """
-        self._socket_handler.results.clear()
-
     def get_events(self, domain, clear=False):
         """ Retrieves all events for a given domain
           :param domain: The domain to get the events for.
@@ -103,16 +92,6 @@ class ChromeInterface(object):
         result_id = self._socket_handler.execute("{}.{}".format(domain, method), args)
 
         return self.wait_for_result(result_id)
-
-    def execute_async(self, domain, method, args=None):
-        """ Same as execute but doesn't wait for the result.
-
-        :param domain: chrome devtools protocol domain
-        :param method: domain specific method.
-        :param args: parameters to be executed
-        :return: id of the request
-        """
-        return self._socket_handler.execute("{}.{}".format(domain, method), args)
 
     def enable_domain(self, domain):
         """ Enables notifications for the given domain.
@@ -149,7 +128,7 @@ class ChromeInterface(object):
     def navigate(self, url):
         """ Navigates to the given url asynchronously
         """
-        return self.execute_async("Page", "navigate", {
+        return self.execute("Page", "navigate", {
             "url": url
         })
 

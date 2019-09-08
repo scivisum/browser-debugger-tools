@@ -70,7 +70,7 @@ class SocketHandler(object):
         if result_id not in self.results:
             raise ResultNotFoundError("Result not found for id: {} .".format(result_id))
 
-        return self.results[result_id]
+        return self.results.pop(result_id)
 
     def execute(self, method, params):
         self._next_result_id += 1
