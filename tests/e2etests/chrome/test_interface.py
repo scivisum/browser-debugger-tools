@@ -151,8 +151,7 @@ class ChromeInterface_get_document_readystate(object):
 
     def test_get_ready_state_dom_complete(self):
 
-        result_id = self.devtools_client.navigate(url="http://localhost:%s" % self.testSite.port)
-        self.devtools_client.wait_for_result(result_id)
+        self.devtools_client.navigate(url="http://localhost:%s" % self.testSite.port)
         self._assert_dom_complete()
         self.assertEqual("complete", self.devtools_client.get_document_readystate())
 
@@ -160,8 +159,7 @@ class ChromeInterface_get_document_readystate(object):
         self.devtools_client.navigate(
             url="http://localhost:%s?main_exchange_response_time=10" % self.testSite.port
         )
-        result_id = self.devtools_client.navigate(url="http://localhost:%s" % self.testSite.port)
-        self.devtools_client.wait_for_result(result_id)
+        self.devtools_client.navigate(url="http://localhost:%s" % self.testSite.port)
         self._assert_dom_complete()
         self.assertEqual("complete", self.devtools_client.get_document_readystate())
 
@@ -213,10 +211,8 @@ class ChromeInterface_emulate_network_conditions(object):
         self.devtools_client.emulate_network_conditions(1, download, upload)
 
         # Page has a default of 1 megabyte response body
-        result_id = self.devtools_client.navigate(url="http://localhost:%s/big_body"
-                                                      % self.testSite.port)
-        self.devtools_client.wait_for_result(result_id)
-
+        self.devtools_client.navigate(url="http://localhost:%s/big_body"
+                                      % self.testSite.port)
         self.assertTrue(self.waitForEventWithMethod("Network.responseReceived"))
         # We have received the response header, now measure how long it takes to download the
         # response body. It should take approximately 10 seconds.
