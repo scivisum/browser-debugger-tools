@@ -239,6 +239,7 @@ class ChromeInterface_set_basic_auth(object):
     def test_standard_auth_page(self):
 
         self.devtools_client.enable_domain("Network")
+        self.devtools_client.quit()
         url = "http://username:password@localhost:%s/auth_challenge" % self.testSite.port
         self.devtools_client.navigate(url=url)
         self._assert_dom_complete()
