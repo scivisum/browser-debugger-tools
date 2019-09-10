@@ -35,7 +35,7 @@ class SocketHandler(object):
 
     def __init__(self, port):
 
-        self.domains = set()
+        self.domains = {}
         self.results = {}
         self.events = {}
 
@@ -51,8 +51,8 @@ class SocketHandler(object):
         self.websocket = websocket.create_connection(self._websocket_url, timeout=self.CONN_TIMEOUT)
         self.websocket.settimeout(0)  # Don"t wait for new messages
 
-        for domain in self.domains:
-            self.execute("%s.enable" % domain, {})
+        for domain, params in self.domains.items():
+            self.execute("%s.enable" % domain, params)
 
         return self.websocket
 
@@ -139,14 +139,14 @@ class SocketHandler(object):
         })
         return self._next_result_id
 
-    def add_domain(self, domain):
+    def add_domain(self, domain, params):
         if domain not in self.domains:
-            self.domains.add(domain)
+            self.domains[domain] = params
             self.events[domain] = []
 
     def remove_domain(self, domain):
         if domain in self.domains:
-            self.domains.remove(domain)
+            del self.domains[domain]
 
     def get_events(self, domain, clear=False):
         if domain not in self.domains:

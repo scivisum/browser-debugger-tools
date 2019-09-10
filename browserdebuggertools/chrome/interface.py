@@ -28,15 +28,15 @@ class ChromeInterface(object):
 
         :param port: remote-debugging-port to connect.
         :param timeout: Timeout between executing a command and receiving a result.
-        :param domains: List of domains to be enabled. By default Page, Network and Runtime are
-                        automatically enabled.
+        :param domains: Dictionary of dictionaries where the Key is the domain string and the Value
+        is a dictionary of the arguments passed with the domain upon enabling.
         """
         self.timeout = timeout
         self._socket_handler = SocketHandler(port)
 
         if domains:
-            for domain in domains:
-                self.enable_domain(domain)
+            for domain, parameters in domains.items():
+                self.enable_domain(domain, parameters=parameters)
 
     def quit(self):
         self._socket_handler.close()
@@ -93,10 +93,13 @@ class ChromeInterface(object):
 
         return self.wait_for_result(result_id)
 
-    def enable_domain(self, domain):
+    def enable_domain(self, domain, parameters=None):
         """ Enables notifications for the given domain.
         """
-        self._socket_handler.add_domain(domain)
+        if parameters is None:
+            parameters = {}
+
+        self._socket_handler.add_domain(domain, parameters)
         result = self.execute(domain, "enable")
         if "error" in result:
             self._socket_handler.remove_domain(domain)
