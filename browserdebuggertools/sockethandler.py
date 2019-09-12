@@ -1,13 +1,16 @@
 import json
 import logging
 import socket
+import time
 from datetime import datetime
 
 import requests
 import websocket
 
-from browserdebuggertools.exceptions import ResultNotFoundError, TabNotFoundError, \
-    DomainNotEnabledError
+from browserdebuggertools.exceptions import (
+    ResultNotFoundError, TabNotFoundError,
+    DomainNotEnabledError, DevToolsTimeoutException, DomainNotFoundError
+)
 
 logging.basicConfig(format='%(levelname)s:%(message)s')
 
@@ -33,9 +36,13 @@ class SocketHandler(object):
     RETRY_COUNT_TIMEOUT = 300
     CONN_TIMEOUT = 15  # Connection timeout
 
-    def __init__(self, port):
+    def __init__(self, port, timeout, domains=None):
 
-        self.domains = {}
+        self.timeout = timeout
+
+        if not domains:
+            domains = {}
+        self.domains = domains
         self.results = {}
         self.events = {}
 
@@ -52,7 +59,7 @@ class SocketHandler(object):
         self.websocket.settimeout(0)  # Don"t wait for new messages
 
         for domain, params in self.domains.items():
-            self.execute("%s.enable" % domain, params)
+            self.enable_domain(domain, params)
 
         return self.websocket
 
@@ -76,6 +83,7 @@ class SocketHandler(object):
 
     @open_connection_if_closed
     def _send(self, data):
+        data['id'] = self._next_result_id
         self.websocket.send(json.dumps(data, sort_keys=True))
 
     @open_connection_if_closed
@@ -111,7 +119,7 @@ class SocketHandler(object):
         else:
             logging.warning("Unrecognised message: {}".format(message))
 
-    def flush_messages(self):
+    def _flush_messages(self):
         """ Will only return once all the messages have been retrieved.
             and will hold the thread until so.
         """
@@ -123,28 +131,33 @@ class SocketHandler(object):
         except socket.error:
             return
 
-    def find_result(self, result_id):
-        if result_id not in self.results:
-            self.flush_messages()
+    def _find_next_result(self):
+        if self._next_result_id not in self.results:
+            self._flush_messages()
 
-        if result_id not in self.results:
-            raise ResultNotFoundError("Result not found for id: {} .".format(result_id))
+        if self._next_result_id not in self.results:
+            raise ResultNotFoundError("Result not found for id: {} .".format(self._next_result_id))
 
-        return self.results.pop(result_id)
+        return self.results.pop(self._next_result_id)
 
-    def execute(self, method, params):
+    def execute(self, domainName, methodName, params=None):
+
+        if params is None:
+            params = {}
+
         self._next_result_id += 1
+        method = "{}.{}".format(domainName, methodName)
         self._send({
-            "id": self._next_result_id, "method": method, "params": params if params else {}
+            "method": method, "params": params
         })
-        return self._next_result_id
+        return self._wait_for_result()
 
-    def add_domain(self, domain, params):
+    def _add_domain(self, domain, params):
         if domain not in self.domains:
             self.domains[domain] = params
             self.events[domain] = []
 
-    def remove_domain(self, domain):
+    def _remove_domain(self, domain):
         if domain in self.domains:
             del self.domains[domain]
 
@@ -154,9 +167,48 @@ class SocketHandler(object):
                 'The domain "%s" is not enabled, try enabling it via the interface.' % domain
             )
 
-        self.flush_messages()
+        self._flush_messages()
         events = self.events[domain][:]
         if clear:
             self.events[domain] = []
 
         return events
+
+    def _wait_for_result(self):
+        """ Waits for a result to complete within the timeout duration then returns it.
+            Raises a DevToolsTimeoutException if it cannot find the result.
+
+        :return: The result.
+          """
+        start = time.time()
+        while not self.timeout or (time.time() - start) < self.timeout:
+            try:
+                return self._find_next_result()
+            except ResultNotFoundError:
+                time.sleep(0.5)
+        raise DevToolsTimeoutException(
+            "Reached timeout limit of {}, waiting for a response message".format(self.timeout)
+        )
+
+    def enable_domain(self, domainName, parameters=None):
+
+        if not parameters:
+            parameters = {}
+
+        self._add_domain(domainName, parameters)
+        result = self.execute(domainName, "enable", parameters)
+        if "error" in result:
+            self._remove_domain(domainName)
+            raise DomainNotFoundError("Domain \"{}\" not found.".format(domainName))
+
+        logging.info("\"{}\" domain has been enabled".format(domainName))
+
+    def disable_domain(self, domainName):
+        """ Disables further notifications from the given domain.
+        """
+        self._remove_domain(domainName)
+        result = self.execute(domainName, "disable", {})
+        if "error" in result:
+            logging.warn("Domain \"{}\" doesn't exist".format(domainName))
+        else:
+            logging.info("Domain {} has been disabled".format(domainName))
