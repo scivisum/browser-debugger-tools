@@ -33,8 +33,8 @@ def open_connection_if_closed(socket_handler_method):
 class SocketHandler(object):
 
     MAX_CONNECTION_RETRIES = 3
-    RETRY_COUNT_TIMEOUT = 300
-    CONN_TIMEOUT = 15  # Connection timeout
+    RETRY_COUNT_TIMEOUT = 300  # Seconds
+    CONN_TIMEOUT = 15  # Connection timeout seconds
 
     def __init__(self, port, timeout, domains=None):
 
@@ -42,26 +42,35 @@ class SocketHandler(object):
 
         if not domains:
             domains = {}
-        self.domains = domains
-        self.results = {}
-        self.events = {}
 
-        self._websocket_url = self._get_websocket_url(port)
-        self.websocket = self._setup_websocket()
+        self._domains = domains
+        self._events = dict([(k, []) for k in self._domains])
+        self._results = {}
 
         self._next_result_id = 0
         self._connection_last_closed = None
         self._connection_closed_count = 0
 
+        self._websocket_url = self._get_websocket_url(port)
+        self._websocket = self._setup_websocket()
+
+    def __del__(self):
+        try:
+            self.close()
+        except:
+            pass
+
     def _setup_websocket(self):
 
-        self.websocket = websocket.create_connection(self._websocket_url, timeout=self.CONN_TIMEOUT)
-        self.websocket.settimeout(0)  # Don"t wait for new messages
+        self._websocket = websocket.create_connection(
+            self._websocket_url, timeout=self.CONN_TIMEOUT
+        )
+        self._websocket.settimeout(0)  # Don"t wait for new messages
 
-        for domain, params in self.domains.items():
+        for domain, params in self._domains.items():
             self.enable_domain(domain, params)
 
-        return self.websocket
+        return self._websocket
 
     def increment_connection_closed_count(self):
 
@@ -84,11 +93,11 @@ class SocketHandler(object):
     @open_connection_if_closed
     def _send(self, data):
         data['id'] = self._next_result_id
-        self.websocket.send(json.dumps(data, sort_keys=True))
+        self._websocket.send(json.dumps(data, sort_keys=True))
 
     @open_connection_if_closed
     def _recv(self):
-        message = self.websocket.recv()
+        message = self._websocket.recv()
         if message:
             message = json.loads(message)
         return message
@@ -104,18 +113,19 @@ class SocketHandler(object):
         return tabs[0]["webSocketDebuggerUrl"]
 
     def close(self):
-        self.websocket.close()
+        if hasattr(self, "_websocket"):
+            self._websocket.close()
 
     def _append(self, message):
 
         if "result" in message:
-            self.results[message["id"]] = message.get("result")
+            self._results[message["id"]] = message.get("result")
         elif "error" in message:
             result_id = message.pop("id")
-            self.results[result_id] = message
+            self._results[result_id] = message
         elif "method" in message:
             domain, event = message["method"].split(".")
-            self.events[domain].append(message)
+            self._events[domain].append(message)
         else:
             logging.warning("Unrecognised message: {}".format(message))
 
@@ -132,13 +142,13 @@ class SocketHandler(object):
             return
 
     def _find_next_result(self):
-        if self._next_result_id not in self.results:
+        if self._next_result_id not in self._results:
             self._flush_messages()
 
-        if self._next_result_id not in self.results:
+        if self._next_result_id not in self._results:
             raise ResultNotFoundError("Result not found for id: {} .".format(self._next_result_id))
 
-        return self.results.pop(self._next_result_id)
+        return self._results.pop(self._next_result_id)
 
     def execute(self, domainName, methodName, params=None):
 
@@ -153,24 +163,25 @@ class SocketHandler(object):
         return self._wait_for_result()
 
     def _add_domain(self, domain, params):
-        if domain not in self.domains:
-            self.domains[domain] = params
-            self.events[domain] = []
+        if domain not in self._domains:
+            self._domains[domain] = params
+            self._events[domain] = []
 
     def _remove_domain(self, domain):
-        if domain in self.domains:
-            del self.domains[domain]
+        if domain in self._domains:
+            del self._domains[domain]
+            del self._events[domain]
 
     def get_events(self, domain, clear=False):
-        if domain not in self.domains:
+        if domain not in self._domains:
             raise DomainNotEnabledError(
                 'The domain "%s" is not enabled, try enabling it via the interface.' % domain
             )
 
         self._flush_messages()
-        events = self.events[domain][:]
+        events = self._events[domain][:]
         if clear:
-            self.events[domain] = []
+            self._events[domain] = []
 
         return events
 
