@@ -32,7 +32,7 @@ class Test_SocketHandler_can_get_messages(SocketHandlerTest):
         mock_message = '{"id": 1, "result": {"key": "value"}}'
         self.socket_handler.websocket.recv.side_effect = [mock_message, None]
 
-        self.socket_handler.flush_messages()
+        self.socket_handler._flush_messages()
 
         self.assertEqual(mock_result, self.socket_handler.results[1])
 
@@ -41,7 +41,7 @@ class Test_SocketHandler_can_get_messages(SocketHandlerTest):
         mock_message = '{"id": 1, "error": {"key": "value"}}'
         self.socket_handler.websocket.recv.side_effect = [mock_message, None]
 
-        self.socket_handler.flush_messages()
+        self.socket_handler._flush_messages()
 
         self.assertEqual(mock_error, self.socket_handler.results[1])
 
@@ -51,7 +51,7 @@ class Test_SocketHandler_can_get_messages(SocketHandlerTest):
         self.socket_handler.events["MockDomain"] = []
         self.socket_handler.websocket.recv.side_effect = [mock_message, None]
 
-        self.socket_handler.flush_messages()
+        self.socket_handler._flush_messages()
 
         self.assertIn(mock_event, self.socket_handler.events["MockDomain"])
 
@@ -68,7 +68,7 @@ class Test_SocketHandler_can_get_messages(SocketHandlerTest):
             mock_result_message, mock_error_message, mock_event_message, None
         ]
 
-        self.socket_handler.flush_messages()
+        self.socket_handler._flush_messages()
 
         self.assertEqual(mock_result, self.socket_handler.results[1])
         self.assertEqual(mock_error, self.socket_handler.results[2])
@@ -79,6 +79,6 @@ class Test_SocketHandler_can_get_messages(SocketHandlerTest):
         mock_message = '{"id": 1, "result": {"key": "value"}}'
         self.socket_handler.websocket.recv.side_effect = [mock_message, socket.error]
 
-        self.socket_handler.flush_messages()
+        self.socket_handler._flush_messages()
 
         self.assertEqual(mock_result, self.socket_handler.results[1])
