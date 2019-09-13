@@ -6,7 +6,7 @@ from base64 import b64encode
 from mock import MagicMock, patch
 
 from browserdebuggertools.chrome.interface import ChromeInterface
-from browserdebuggertools.exceptions import ResultNotFoundError, DevToolsTimeoutException
+from browserdebuggertools.exceptions import DevToolsTimeoutException
 
 MODULE_PATH = "browserdebuggertools.chrome.interface."
 
@@ -48,8 +48,8 @@ class Test_ChromeInterface_set_timeout(TestCase):
     def test_timeout_exception_raised(self):
 
         interface = ChromeInterface(0)
-        interface._socket_handler.websocket.send = MagicMock()
-        interface._socket_handler.websocket.recv = MagicMock(return_value=None)
+        interface._socket_handler._websocket.send = MagicMock()
+        interface._socket_handler._websocket.recv = MagicMock(return_value=None)
 
         start = time.time()
         with self.assertRaises(DevToolsTimeoutException):
