@@ -63,7 +63,9 @@ class ChromeInterface(object):
         self._socket_handler.enable_domain(domain, parameters=params)
 
     def disable_domain(self, domain):
-        """ Disables further notifications from the given domain.
+        """ Disables further notifications from the given domain. Also clears any events cached for
+            that domain, it is recommended that you get events for the domain before disabling it.
+
         """
         self._socket_handler.disable_domain(domain)
 
