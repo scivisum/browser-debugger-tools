@@ -7,10 +7,10 @@ from unittest import TestCase
 
 from requests import ConnectionError
 
+from browserdebuggertools.exceptions import DevToolsTimeoutException
 from tests.e2etests.testsite.start import Server as TestSiteServer
 from browserdebuggertools.utils import get_free_port
 from browserdebuggertools.chrome.interface import ChromeInterface
-from browserdebuggertools.chrome.interface import DevToolsTimeoutException
 
 
 BROWSER_PATH = os.environ.get("DEFAULT_CHROME_BROWSER_PATH", "/opt/google/chrome/chrome")
@@ -70,6 +70,14 @@ class ChromeInterfaceTest(object):
 
         self.assertTrue(domComplete)
 
+    def _get_responses_received(self):
+
+        responses_received = []
+        for event in self.devtools_client.get_events("Network"):
+            if event.get("method") == "Network.responseReceived":
+                responses_received.append(event["params"]["response"]["status"])
+        return responses_received
+
     @classmethod
     def tearDownClass(cls):
         cls.devtools_client.quit()
@@ -99,6 +107,8 @@ class ChromeInterface_take_screenshot(object):
 
     def test_take_screenshot_dom_complete(self):
 
+        assert isinstance(self, ChromeInterfaceTest)
+
         self.devtools_client.navigate(url="http://localhost:%s" % self.testSite.port)
         self._assert_dom_complete()
         self.devtools_client.take_screenshot(self.file_path)
@@ -106,6 +116,8 @@ class ChromeInterface_take_screenshot(object):
         self.assertTrue(os.path.getsize(self.file_path) >= 5000)
 
     def test_take_screenshot_incomplete_main_exchange(self):
+
+        assert isinstance(self, ChromeInterfaceTest)
 
         self.devtools_client.navigate(
             url="http://localhost:%s?main_exchange_response_time=10" % self.testSite.port
@@ -115,6 +127,8 @@ class ChromeInterface_take_screenshot(object):
         self.assertTrue(os.path.getsize(self.file_path) >= 5000)
 
     def test_take_screenshot_incomplete_head_component(self):
+
+        assert isinstance(self, ChromeInterfaceTest)
 
         self.devtools_client.navigate(
             url="http://localhost:%s?head_component_response_time=30"
@@ -151,11 +165,16 @@ class ChromeInterface_get_document_readystate(object):
 
     def test_get_ready_state_dom_complete(self):
 
+        assert isinstance(self, ChromeInterfaceTest)
+
         self.devtools_client.navigate(url="http://localhost:%s" % self.testSite.port)
         self._assert_dom_complete()
         self.assertEqual("complete", self.devtools_client.get_document_readystate())
 
     def test_take_screenshot_incomplete_main_exchange(self):
+
+        assert isinstance(self, ChromeInterfaceTest)
+
         self.devtools_client.navigate(
             url="http://localhost:%s?main_exchange_response_time=10" % self.testSite.port
         )
@@ -164,6 +183,8 @@ class ChromeInterface_get_document_readystate(object):
         self.assertEqual("complete", self.devtools_client.get_document_readystate())
 
     def test_take_screenshot_incomplete_head_component(self):
+
+        assert isinstance(self, ChromeInterfaceTest)
 
         self.devtools_client.navigate(
             url="http://localhost:%s?head_component_response_time=30"
@@ -195,6 +216,8 @@ class ChromeInterface_emulate_network_conditions(object):
 
     def waitForEventWithMethod(self, method, timeout=30):
 
+        assert isinstance(self, ChromeInterfaceTest)
+
         start = time.time()
         while (time.time() - start) < timeout:
             for event in self.devtools_client.get_events(method.split(".")[0]):
@@ -206,6 +229,8 @@ class ChromeInterface_emulate_network_conditions(object):
 
         upload = 1000000000000  # 1 terabytes / second (no limit)
         download = 100000  # 100 kilobytes / second
+
+        assert isinstance(self, ChromeInterfaceTest)
 
         self.devtools_client.enable_domain("Network")
         self.devtools_client.emulate_network_conditions(1, download, upload)
@@ -238,15 +263,14 @@ class ChromeInterface_set_basic_auth(object):
 
     def test_standard_auth_page(self):
 
+        assert isinstance(self, ChromeInterfaceTest)
+
         self.devtools_client.enable_domain("Network")
         url = "http://username:password@localhost:%s/auth_challenge" % self.testSite.port
         self.devtools_client.navigate(url=url)
         self._assert_dom_complete()
 
-        responses_received = []
-        for event in self.devtools_client.get_events("Network"):
-            if event.get("method") == "Network.responseReceived":
-                responses_received.append(event["params"]["response"]["status"])
+        responses_received = self._get_responses_received()
 
         self.assertTrue(len(responses_received) >= 2)  # Headed browser creates extra requests
         self.assertIn(200, responses_received)
@@ -261,5 +285,35 @@ class Test_ChromeInterface_set_baic_auth_headed(
 
 class Test_ChromeInterface_set_baic_auth_headless(
     HeadlessChromeInterfaceTest, ChromeInterface_set_basic_auth, TestCase
+):
+    pass
+
+
+class ChromeInterface_connection_unexpectadely_closed(object):
+
+    def test(self):
+
+        assert isinstance(self, ChromeInterfaceTest)
+
+        self.devtools_client.enable_domain("Network")
+        self.devtools_client.quit()
+
+        url = "http://localhost:%s" % self.testSite.port
+        self.devtools_client.navigate(url=url)
+
+        self._assert_dom_complete()
+
+        responses_received = self._get_responses_received()
+        self.assertIn(200, responses_received)
+
+
+class Test_ChromeInterface_connection_unexpectadely_closed_headed(
+    HeadedChromeInterfaceTest, ChromeInterface_connection_unexpectadely_closed, TestCase
+):
+    pass
+
+
+class Test_ChromeInterface_connection_unexpectadely_closed_headless(
+    HeadlessChromeInterfaceTest, ChromeInterface_connection_unexpectadely_closed, TestCase
 ):
     pass

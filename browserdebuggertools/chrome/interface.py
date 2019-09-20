@@ -1,12 +1,9 @@
 import contextlib
-import time
 import logging
 from base64 import b64decode, b64encode
 
 from browserdebuggertools.sockethandler import SocketHandler
-from browserdebuggertools.exceptions import (
-    DevToolsTimeoutException, ResultNotFoundError, DomainNotFoundError
-)
+
 
 logging.basicConfig(format='%(levelname)s:%(message)s')
 
@@ -28,44 +25,13 @@ class ChromeInterface(object):
 
         :param port: remote-debugging-port to connect.
         :param timeout: Timeout between executing a command and receiving a result.
-        :param domains: List of domains to be enabled. By default Page, Network and Runtime are
-                        automatically enabled.
+        :param domains: Dictionary of dictionaries where the Key is the domain string and the Value
+        is a dictionary of the arguments passed with the domain upon enabling.
         """
-        self.timeout = timeout
-        self._socket_handler = SocketHandler(port)
-
-        if domains:
-            for domain in domains:
-                self.enable_domain(domain)
+        self._socket_handler = SocketHandler(port, timeout, domains=domains)
 
     def quit(self):
         self._socket_handler.close()
-
-    def wait_for_result(self, result_id):
-        """ Waits for a result to complete within the timeout duration then returns it.
-            Raises a DevToolsTimeoutException if it cannot find the result.
-
-        :param result_id: The result id.
-        :return: The result.
-          """
-        start = time.time()
-        while not self.timeout or (time.time() - start) < self.timeout:
-            try:
-                return self._socket_handler.find_result(result_id)
-            except ResultNotFoundError:
-                time.sleep(0.5)
-        raise DevToolsTimeoutException(
-            "Reached timeout limit of {}, waiting for a response message".format(self.timeout)
-        )
-
-    def get_result(self, result_id):
-        """ Gets the result for a given id, if it has finished executing
-            Raises a ResultNotFoundError if it cannot find the result.
-
-        :param result_id: The result id.
-        :return: The result.
-          """
-        return self._socket_handler.find_result(result_id)
 
     def get_events(self, domain, clear=False):
         """ Retrieves all events for a given domain
@@ -75,7 +41,7 @@ class ChromeInterface(object):
           """
         return self._socket_handler.get_events(domain, clear)
 
-    def execute(self, domain, method, args=None):
+    def execute(self, domain, method, params=None):
         """ Executes a command and returns the result.
 
         Usage example:
@@ -86,44 +52,33 @@ class ChromeInterface(object):
 
         :param domain: Chrome DevTools Protocol Domain
         :param method: Domain specific method.
-        :param args: Parameters to be executed
+        :param params: Parameters to be executed
         :return: The result of the command
         """
-        result_id = self._socket_handler.execute("{}.{}".format(domain, method), args)
+        return self._socket_handler.execute(domain, method, params=params)
 
-        return self.wait_for_result(result_id)
-
-    def enable_domain(self, domain):
+    def enable_domain(self, domain, params=None):
         """ Enables notifications for the given domain.
         """
-        self._socket_handler.add_domain(domain)
-        result = self.execute(domain, "enable")
-        if "error" in result:
-            self._socket_handler.remove_domain(domain)
-            raise DomainNotFoundError("Domain \"{}\" not found.".format(domain))
-
-        logging.info("\"{}\" domain has been enabled".format(domain))
+        self._socket_handler.enable_domain(domain, parameters=params)
 
     def disable_domain(self, domain):
-        """ Disables further notifications from the given domain.
+        """ Disables further notifications from the given domain. Also clears any events cached for
+            that domain, it is recommended that you get events for the domain before disabling it.
+
         """
-        self._socket_handler.remove_domain(domain)
-        result = self.execute(domain, "disable")
-        if "error" in result:
-            logging.warn("Domain \"{}\" doesn't exist".format(domain))
-        else:
-            logging.info("Domain {} has been disabled".format(domain))
+        self._socket_handler.disable_domain(domain)
 
     @contextlib.contextmanager
     def set_timeout(self, value):
         """ Switches the timeout to the given value.
         """
-        _timeout = self.timeout
-        self.timeout = value
+        _timeout = self._socket_handler.timeout
+        self._socket_handler.timeout = value
         try:
             yield
         finally:
-            self.timeout = _timeout
+            self._socket_handler.timeout = _timeout
 
     def navigate(self, url):
         """ Navigates to the given url asynchronously

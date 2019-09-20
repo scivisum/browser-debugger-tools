@@ -5,8 +5,8 @@ from base64 import b64encode
 
 from mock import MagicMock, patch
 
-from browserdebuggertools.chrome.interface import ChromeInterface, DevToolsTimeoutException
-from browserdebuggertools.exceptions import ResultNotFoundError
+from browserdebuggertools.chrome.interface import ChromeInterface
+from browserdebuggertools.exceptions import DevToolsTimeoutException
 
 MODULE_PATH = "browserdebuggertools.chrome.interface."
 
@@ -18,17 +18,12 @@ class MockChromeInterface(ChromeInterface):
         self._socket_handler = MagicMock()
 
 
-class ChromeInterfaceTest(TestCase):
-
-    def setUp(self):
-        self.interface = MockChromeInterface(1234)
-
-
 @patch(MODULE_PATH + "ChromeInterface.execute")
-class Test_ChromeInterface_take_screenshot(ChromeInterfaceTest):
+class Test_ChromeInterface_take_screenshot(TestCase):
 
     def setUp(self):
         super(Test_ChromeInterface_take_screenshot, self).setUp()
+        self.interface = MockChromeInterface(1234)
         self.file_path = "/tmp/%s" % time.time()
 
     def test_take_screenshot(self, execute):
@@ -46,14 +41,20 @@ class Test_ChromeInterface_take_screenshot(ChromeInterfaceTest):
             os.remove(self.file_path)
 
 
-class Test_ChromeInterface_set_timeout(ChromeInterfaceTest):
+@patch(MODULE_PATH + "SocketHandler._setup_websocket", MagicMock())
+@patch(MODULE_PATH + "SocketHandler._get_websocket_url", MagicMock())
+class Test_ChromeInterface_set_timeout(TestCase):
 
     def test_timeout_exception_raised(self):
-        self.interface._socket_handler.find_result.side_effect = ResultNotFoundError()
+
+        interface = ChromeInterface(0)
+        interface._socket_handler._websocket.send = MagicMock()
+        interface._socket_handler._websocket.recv = MagicMock(return_value=None)
+
         start = time.time()
         with self.assertRaises(DevToolsTimeoutException):
-            with self.interface.set_timeout(3):
-                self.interface.execute("Something", "Else")
+            with interface.set_timeout(3):
+                interface.execute("Something", "Else")
 
         elapsed = time.time() - start
         self.assertGreaterEqual(elapsed, 2.5)
