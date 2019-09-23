@@ -8,7 +8,7 @@ import requests
 import websocket
 
 from browserdebuggertools.exceptions import (
-    ResultNotFoundError, TabNotFoundError,
+    ResultNotFoundError, TabNotFoundError, MaxRetriesException,
     DomainNotEnabledError, DevToolsTimeoutException, DomainNotFoundError
 )
 
@@ -86,7 +86,9 @@ class SocketHandler(object):
         self._connection_closed_count += 1
 
         if self._connection_closed_count > self.MAX_CONNECTION_RETRIES:
-            raise Exception("Websocket connection found closed too many times")
+            raise MaxRetriesException("Websocket connection found closed %s times within %s" % (
+                self.MAX_CONNECTION_RETRIES, self.RETRY_COUNT_TIMEOUT
+            ))
 
         self._setup_websocket()
 
