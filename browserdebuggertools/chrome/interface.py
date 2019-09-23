@@ -29,6 +29,8 @@ class ChromeInterface(object):
         is a dictionary of the arguments passed with the domain upon enabling.
         """
         self._socket_handler = SocketHandler(port, timeout, domains=domains)
+        self._backend_node_id = None
+        self._current_url = None
 
     def quit(self):
         self._socket_handler.close()
@@ -106,8 +108,28 @@ class ChromeInterface(object):
 
         return result.get("value")
 
+    def check_page_has_changed(self):
+        self._socket_handler.flush_messages()
+        url_changed = self._socket_handler.internal_events['Page']['domContentEventFired']
+        if url_changed:
+            logging.info("OLD URL was %s" % self._current_url)
+            self._current_url = None
+            self._backend_node_id = None
+            self._socket_handler.internal_events['Page']['domContentEventFired'] = []
+
+        if self._current_url is None:
+            print("Retrieving new URL")
+            root = self.execute("DOM", "getDocument", {"depth": 0})["root"]
+            self._current_url = root["documentURL"]
+            self._backend_node_id = root["backendNodeId"]
+
     def get_url(self):
-        return self.execute_javascript("document.URL")
+        if "Page" in self._socket_handler.domains:
+            self.check_page_has_changed()
+            return self._current_url
+        else:
+            print("Page not enabled")
+            return self.execute("DOM", "getDocument", {"depth": 0})["root"]["documentURL"]
 
     def get_document_readystate(self):
         """ Gets the document.readyState of the page.
@@ -117,7 +139,14 @@ class ChromeInterface(object):
     def get_page_source(self):
         """ Returns a string serialization of the active document's DOM
         """
-        return self.execute_javascript("document.documentElement.innerHTML")
+        if "Page" in self._socket_handler.domains:
+            self.check_page_has_changed()
+            root_node_id = self._backend_node_id
+        else:
+            print("Page not enabled")
+            root_node_id = self.execute("DOM", "getDocument", {"depth": 0})["root"]["backendNodeId"]
+
+        return self.execute("DOM", "getOuterHTML", {"backendNodeId": root_node_id})["outerHTML"]
 
     def set_user_agent_override(self, user_agent):
         """ Overriding user agent with the given string.

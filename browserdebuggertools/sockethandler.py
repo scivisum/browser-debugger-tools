@@ -46,7 +46,11 @@ class SocketHandler(object):
         self._domains = domains
         self._events = dict([(k, []) for k in self._domains])
         self._results = {}
-
+        self.internal_events = {
+            "Page": {
+                "domContentEventFired": []
+            }
+        }
         self._next_result_id = 0
         self._connection_last_closed = None
         self._connection_closed_count = 0
@@ -125,7 +129,11 @@ class SocketHandler(object):
             self._results[result_id] = message
         elif "method" in message:
             domain, event = message["method"].split(".")
-            self._events[domain].append(message)
+            if domain in self.internal_events:
+                if event in self.internal_events[domain]:
+                    self.internal_events[domain][event].append(message)
+            if domain in self.events:
+                self.events[domain].append(message)
         else:
             logging.warning("Unrecognised message: {}".format(message))
 
@@ -160,6 +168,7 @@ class SocketHandler(object):
         self._send({
             "method": method, "params": params
         })
+        time.sleep(0.1)
         return self._wait_for_result()
 
     def _add_domain(self, domain, params):
@@ -178,10 +187,12 @@ class SocketHandler(object):
                 'The domain "%s" is not enabled, try enabling it via the interface.' % domain
             )
 
-        self._flush_messages()
-        events = self._events[domain][:]
+        self.flush_messages()
+        events = self.events[domain]
         if clear:
             self._events[domain] = []
+        else:
+            events = events[:]
 
         return events
 
