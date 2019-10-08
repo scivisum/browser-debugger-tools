@@ -70,6 +70,25 @@ class TestSite(object):
                 return True
         return False
 
+    @cherrypy.expose
+    def simple_page(self):
+        return "<html><head></head><body><h1>Simple Page</h1></body></html>"
+
+    @cherrypy.expose
+    def simple_page_2(self):
+        return "<html><head></head><body><h1>Simple Page 2</h1></body></html>"
+
+    @cherrypy.expose
+    def fake_load_page(self):
+        fake_page_script = "<script>" \
+                         "function fake_page_load(){" \
+                            "document.getElementById('title-text').innerHTML= 'Fake Title';" \
+                            "window.history.pushState('fake_page', 'Fake Title', '/fake_page');" \
+                         "}" \
+                         "</script>"
+        return "<html><head></head><body><h1 id='title-text'>Simple Page 3</h1>" \
+               "%s</body></html>" % fake_page_script
+
 
 class Server(object):
 

@@ -7,12 +7,11 @@ from datetime import datetime
 import requests
 import websocket
 
+from browserdebuggertools.eventhandlers import PageLoadEventHandler
 from browserdebuggertools.exceptions import (
     ResultNotFoundError, TabNotFoundError,
     DomainNotEnabledError, DevToolsTimeoutException, DomainNotFoundError
 )
-
-logging.basicConfig(format='%(levelname)s:%(message)s')
 
 
 def open_connection_if_closed(socket_handler_method):
@@ -46,9 +45,15 @@ class SocketHandler(object):
         self._domains = domains
         self._events = dict([(k, []) for k in self._domains])
         self._results = {}
-        self.internal_events = {
+
+        self.event_handlers = {
+            "PageLoad": PageLoadEventHandler(self)
+        }
+
+        self._internal_events = {
             "Page": {
-                "domContentEventFired": []
+                "domContentEventFired": self.event_handlers["PageLoad"],
+                "navigatedWithinDocument": self.event_handlers["PageLoad"],
             }
         }
         self._next_result_id = 0
@@ -129,11 +134,11 @@ class SocketHandler(object):
             self._results[result_id] = message
         elif "method" in message:
             domain, event = message["method"].split(".")
-            if domain in self.internal_events:
-                if event in self.internal_events[domain]:
-                    self.internal_events[domain][event].append(message)
-            if domain in self.events:
-                self.events[domain].append(message)
+            if domain in self._internal_events:
+                if event in self._internal_events[domain]:
+                    self._internal_events[domain][event].handle(message)
+            if domain in self._events:
+                self._events[domain].append(message)
         else:
             logging.warning("Unrecognised message: {}".format(message))
 
@@ -168,7 +173,6 @@ class SocketHandler(object):
         self._send({
             "method": method, "params": params
         })
-        time.sleep(0.1)
         return self._wait_for_result()
 
     def _add_domain(self, domain, params):
@@ -187,8 +191,8 @@ class SocketHandler(object):
                 'The domain "%s" is not enabled, try enabling it via the interface.' % domain
             )
 
-        self.flush_messages()
-        events = self.events[domain]
+        self._flush_messages()
+        events = self._events[domain]
         if clear:
             self._events[domain] = []
         else:
@@ -207,7 +211,7 @@ class SocketHandler(object):
             try:
                 return self._find_next_result()
             except ResultNotFoundError:
-                time.sleep(0.5)
+                time.sleep(0.01)
         raise DevToolsTimeoutException(
             "Reached timeout limit of {}, waiting for a response message".format(self.timeout)
         )
