@@ -8,6 +8,8 @@ The purpose is to provide a python client to connect to the debugger tools of a 
 
 **Currently supports** connecting to **Google-Chrome/Chromium** over the devtools protocol, via a wrapped websockets client. **Feel free to extend and add support for other browsers** as required.
 
+For improved performance, install the wsaccel python lib https://pypi.org/project/wsaccel/
+
 ## Example Usage
 
 Start Google-Chrome, passing a remote debugger port argument, for example on Ubuntu:
