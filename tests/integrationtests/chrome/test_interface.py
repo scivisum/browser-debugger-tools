@@ -92,6 +92,7 @@ class Test_ChromeInterface_get_url(ChromeInterfaceTest):
 
     def test_page_enabled_cache(self):
         self.interface._socket_handler._domains["Page"] = {}
+        self.interface._socket_handler._events["Page"] = []
         self.interface._socket_handler._websocket.recv = MagicMock(return_value=None)
         self.interface._socket_handler.execute = MagicMock()
 

@@ -11,7 +11,7 @@ from browserdebuggertools.sockethandler import SocketHandler
 MODULE_PATH = "browserdebuggertools.sockethandler."
 
 
-class MockSocketHandler(SocketHandler):
+class BaseMockSocketHandler(SocketHandler):
 
     def __init__(self):
         self._websocket = MagicMock()
@@ -23,6 +23,18 @@ class MockSocketHandler(SocketHandler):
         self._events = {}
 
 
+class MockSocketHandler(SocketHandler):
+
+    def __init__(self):
+        super(MockSocketHandler, self).__init__(1234, 30)
+
+    def _get_websocket_url(self, port):
+        return "ws://localhost:1234/devtools/page/test"
+
+    def _setup_websocket(self):
+        return MagicMock()
+
+
 class SocketHandlerTest(TestCase):
 
     def setUp(self):
@@ -31,7 +43,10 @@ class SocketHandlerTest(TestCase):
 
 @patch(MODULE_PATH + "requests")
 @patch(MODULE_PATH + "websocket", MagicMock())
-class Test_Sockethandler__get_websocket_url(SocketHandlerTest):
+class Test_Sockethandler__get_websocket_url(TestCase):
+
+    def setUp(self):
+        self.socket_handler = BaseMockSocketHandler()
 
     def test(self, requests):
         mock_websocket_url = "ws://localhost:1234/devtools/page/test"
@@ -80,6 +95,20 @@ class Test_SocketHandler__append(SocketHandlerTest):
         self.socket_handler._append(mock_event)
 
         self.assertIn(mock_event, self.socket_handler._events["MockDomain"])
+
+    def test_internal_event(self):
+        self.socket_handler._events["MockDomain"] = []
+        mock_event_handler = MagicMock()
+        self.socket_handler.event_handlers = {
+            "MockEvent": mock_event_handler
+        }
+        self.socket_handler._internal_events = {"MockDomain": {"mockMethod": mock_event_handler}}
+        mock_event = {"method": "MockDomain.mockMethod", "params": MagicMock}
+
+        self.socket_handler._append(mock_event)
+
+        self.assertIn(mock_event, self.socket_handler._events["MockDomain"])
+        self.assertTrue(mock_event_handler.handle.called)
 
 
 @patch(MODULE_PATH + "SocketHandler._append", MagicMock())

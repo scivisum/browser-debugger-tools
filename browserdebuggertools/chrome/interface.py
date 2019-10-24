@@ -107,10 +107,10 @@ class ChromeInterface(object):
         return result.get("value")
 
     def get_url(self):
-        if "Page" in self._socket_handler._domains:
-            return self._socket_handler.event_handlers["PageLoad"].get_current_url()
-        else:
-            return self.execute("DOM", "getDocument", {"depth": 0})["root"]["documentURL"]
+        """ Returns the current url of the page.
+            Consider enabling the Page domain to increase performance.
+        """
+        return self._socket_handler.event_handlers["PageLoad"].get_current_url()
 
     def get_document_readystate(self):
         """ Gets the document.readyState of the page.
@@ -118,13 +118,10 @@ class ChromeInterface(object):
         return self.execute_javascript("document.readyState")
 
     def get_page_source(self):
-        """ Returns a string serialization of the active document's DOM
+        """ Returns a string serialization of the active document's DOM.
+            Consider enabling the Page domain to increase performance.
         """
-        root_node_id = None
-        if "Page" in self._socket_handler._domains:
-            root_node_id = self._socket_handler.event_handlers["PageLoad"].get_root_node_id()
-        else:
-            root_node_id = self.execute("DOM", "getDocument", {"depth": 0})["root"]["backendNodeId"]
+        root_node_id = self._socket_handler.event_handlers["PageLoad"].get_root_node_id()
 
         return self.execute("DOM", "getOuterHTML", {"backendNodeId": root_node_id})["outerHTML"]
 

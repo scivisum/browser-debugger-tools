@@ -1,15 +1,14 @@
 import logging
 from abc import ABCMeta, abstractmethod
 
+from browserdebuggertools.exceptions import DomainNotEnabledError
+
 logging.basicConfig(format='%(levelname)s:%(message)s')
 
 
 class EventHandler(object):
 
     __metaclass__ = ABCMeta
-
-    def __init__(self, socket_handler):
-        self._socket_handler = socket_handler
 
     @abstractmethod
     def handle(self, message):
@@ -19,7 +18,7 @@ class EventHandler(object):
 class PageLoadEventHandler(EventHandler):
 
     def __init__(self, socket_handler):
-        super(PageLoadEventHandler, self).__init__(socket_handler)
+        super(PageLoadEventHandler, self).__init__()
         self._socket_handler = socket_handler
         self._url = None
         self._root_node_id = None
@@ -31,14 +30,18 @@ class PageLoadEventHandler(EventHandler):
             self._url = message["params"]["url"]
         else:
             logging.info("Detected Page Load")
-            self.reset()
+            self._reset()
 
-    def reset(self):
+    def _reset(self):
         self._url = None
         self._root_node_id = None
 
     def check_page_load(self):
-        self._socket_handler._flush_messages()
+        try:
+            self._socket_handler.get_events("Page")
+        except DomainNotEnabledError:
+            self._reset()
+
         if self._root_node_id is None:
             logging.info("Retrieving new page data")
             root = self._socket_handler.execute("DOM", "getDocument", {"depth": 0})["root"]
