@@ -176,3 +176,15 @@ class ChromeInterface(object):
         :param headers: A dictionary of the form {"headerKey": "headerValue"}
         """
         self.execute("Network", "setExtraHTTPHeaders", {"headers": headers})
+
+    def get_opened_javascript_dialog(self):
+        # type: () -> JavascriptDialog
+        """
+        Gets the opened javascript dialog.
+
+        :raises DomainNotFoundError: If the Page domain isn't enabled
+        :raises JavascriptDialogNotFoundError: If there is currently no dialog open
+        """
+        return (
+            self._socket_handler.event_handlers["JavascriptDialog"].get_opened_javascript_dialog()
+        )

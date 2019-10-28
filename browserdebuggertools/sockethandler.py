@@ -3,11 +3,14 @@ import logging
 import socket
 import time
 from datetime import datetime
+from typing import Dict
 
 import requests
 import websocket
 
-from browserdebuggertools.eventhandlers import PageLoadEventHandler
+from browserdebuggertools.eventhandlers import (
+    EventHandler, PageLoadEventHandler, JavascriptDialogEventHandler
+)
 from browserdebuggertools.exceptions import (
     ResultNotFoundError, TabNotFoundError,
     DomainNotEnabledError, DevToolsTimeoutException, DomainNotFoundError
@@ -47,15 +50,18 @@ class SocketHandler(object):
         self._results = {}
 
         self.event_handlers = {
-            "PageLoad": PageLoadEventHandler(self)
-        }
+            "PageLoad": PageLoadEventHandler(self),
+            "JavascriptDialog": JavascriptDialogEventHandler(self),
+        }  # type: Dict[str, EventHandler]
 
         self._internal_events = {
             "Page": {
                 "domContentEventFired": self.event_handlers["PageLoad"],
                 "navigatedWithinDocument": self.event_handlers["PageLoad"],
+                "javascriptDialogOpening": self.event_handlers["JavascriptDialog"],
+                "javascriptDialogClosed": self.event_handlers["JavascriptDialog"],
             }
-        }
+        }  # type: Dict[str, Dict[str, EventHandler]]
         self._next_result_id = 0
         self._connection_last_closed = None
         self._connection_closed_count = 0
@@ -174,6 +180,18 @@ class SocketHandler(object):
             "method": method, "params": params
         })
         return self._wait_for_result()
+
+    def execute_async(self, domain_name, method_name, params=None):
+        if params is None:
+            params = {}
+
+        self._next_result_id += 1
+        method = "{}.{}".format(domain_name, method_name)
+        self._send({
+            "method": method, "params": params
+        })
+        # TODO: discard used results
+        return self._next_result_id
 
     def _add_domain(self, domain, params):
         if domain not in self._domains:

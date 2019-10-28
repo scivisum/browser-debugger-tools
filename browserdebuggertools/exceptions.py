@@ -28,3 +28,7 @@ class DomainNotFoundError(ProtocolError, NotFoundError):
 
 class ResultNotFoundError(NotFoundError):
     pass
+
+
+class JavascriptDialogNotFoundError(NotFoundError):
+    pass

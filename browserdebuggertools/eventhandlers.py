@@ -1,7 +1,10 @@
 import logging
 from abc import ABCMeta, abstractmethod
+from typing import Optional
 
-from browserdebuggertools.exceptions import DomainNotEnabledError
+from browserdebuggertools.exceptions import DomainNotEnabledError, JavascriptDialogNotFoundError
+from browserdebuggertools.models import JavascriptDialog
+
 
 logging.basicConfig(format='%(levelname)s:%(message)s')
 
@@ -9,6 +12,10 @@ logging.basicConfig(format='%(levelname)s:%(message)s')
 class EventHandler(object):
 
     __metaclass__ = ABCMeta
+
+    def __init__(self, socket_handler):
+        # type: (SocketHandler) -> None
+        self._socket_handler = socket_handler
 
     @abstractmethod
     def handle(self, message):
@@ -18,13 +25,11 @@ class EventHandler(object):
 class PageLoadEventHandler(EventHandler):
 
     def __init__(self, socket_handler):
-        super(PageLoadEventHandler, self).__init__()
-        self._socket_handler = socket_handler
+        super(PageLoadEventHandler, self).__init__(socket_handler)
         self._url = None
         self._root_node_id = None
 
     def handle(self, message):
-        super(PageLoadEventHandler, self).handle(message)
         if message.get("method") == "Page.navigatedWithinDocument":
             logging.info("Detected URL change %s" % message["params"]["url"])
             self._url = message["params"]["url"]
@@ -55,3 +60,33 @@ class PageLoadEventHandler(EventHandler):
     def get_root_node_id(self):
         self.check_page_load()
         return self._root_node_id
+
+
+class JavascriptDialogEventHandler(EventHandler):
+
+    def __init__(self, socket_handler):
+        super(JavascriptDialogEventHandler, self).__init__(socket_handler)
+        self._dialog = None  # type: Optional[JavascriptDialog]
+
+    def handle(self, message):
+        if message["method"] == "Page.javascriptDialogOpening":
+            logging.info("Detected dialog opened")
+            self._dialog = JavascriptDialog(self._socket_handler, message["params"])
+
+        elif message["method"] == "Page.javascriptDialogClosed":
+            logging.info("Detected javascript dialog closed")
+            # Instead of setting self._dialog to None we switch the handled property so that we
+            # change the handled property for all instances of the object.
+            self._dialog.is_handled = True
+
+    def get_opened_javascript_dialog(self):
+        """
+        Gets the opened javascript dialog
+
+        :return JavascriptDialog:
+        :raises JavascriptDialogNotFoundError:
+        """
+        self._socket_handler.get_events("Page")
+        if not self._dialog or self._dialog.is_handled:
+            raise JavascriptDialogNotFoundError()
+        return self._dialog
