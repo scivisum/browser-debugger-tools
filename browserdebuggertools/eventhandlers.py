@@ -28,7 +28,7 @@ class PageLoadEventHandler(EventHandler):
         if message.get("method") == "Page.navigatedWithinDocument":
             logging.info("Detected URL change %s" % message["params"]["url"])
             self._url = message["params"]["url"]
-        else:
+        elif message.get("method") == "Page.domContentEventFired":
             logging.info("Detected Page Load")
             self._reset()
 

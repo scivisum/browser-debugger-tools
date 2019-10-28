@@ -28,7 +28,7 @@ class ChromeInterface(object):
         :param domains: Dictionary of dictionaries where the Key is the domain string and the Value
         is a dictionary of the arguments passed with the domain upon enabling.
         """
-        self._socket_handler = SocketHandler(port, timeout, domains=domains)
+        self._socket_handler = SocketHandler(port, timeout, domains=domains)  # type: SocketHandler
 
     def quit(self):
         self._socket_handler.close()
@@ -107,8 +107,11 @@ class ChromeInterface(object):
         return result.get("value")
 
     def get_url(self):
-        """ Returns the current url of the page.
-            Consider enabling the Page domain to increase performance.
+        # type: () -> str
+        """
+        Consider enabling the Page domain to increase performance.
+
+        :returns: The url of the current page.
         """
         return self._socket_handler.event_handlers["PageLoad"].get_current_url()
 
@@ -118,8 +121,11 @@ class ChromeInterface(object):
         return self.execute_javascript("document.readyState")
 
     def get_page_source(self):
-        """ Returns a string serialization of the active document's DOM.
-            Consider enabling the Page domain to increase performance.
+        # type: () -> str
+        """
+        Consider enabling the Page domain to increase performance.
+
+        :returns: A string serialization of the active document's DOM.
         """
         root_node_id = self._socket_handler.event_handlers["PageLoad"].get_root_node_id()
 

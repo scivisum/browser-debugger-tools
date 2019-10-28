@@ -9,15 +9,14 @@ from browserdebuggertools.exceptions import DomainNotEnabledError
 class PageLoadEventHandlerTest(TestCase):
 
     def setUp(self):
-        socket_handler = MagicMock()
-        self.event_handler = PageLoadEventHandler(socket_handler)
+        self.event_handler = PageLoadEventHandler(socket_handler=MagicMock())
 
 
 class Test_PageLoadEventHandler_handle(PageLoadEventHandlerTest):
 
     def test_url_change(self):
         mock_url = "url.com"
-        mock_message = {"method": "Page.navigatedWithinDocument", "params":{"url": mock_url}}
+        mock_message = {"method": "Page.navigatedWithinDocument", "params": {"url": mock_url}}
 
         self.event_handler.handle(mock_message)
 

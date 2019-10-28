@@ -6,11 +6,15 @@ class ProtocolError(DevToolsException):
     pass
 
 
+class NotFoundError(DevToolsException):
+    pass
+
+
 class DevToolsTimeoutException(DevToolsException):
     pass
 
 
-class TabNotFoundError(DevToolsException):
+class TabNotFoundError(NotFoundError):
     pass
 
 
@@ -18,11 +22,9 @@ class DomainNotEnabledError(DevToolsException):
     pass
 
 
-class DomainNotFoundError(ProtocolError):
+class DomainNotFoundError(ProtocolError, NotFoundError):
     pass
 
 
-class ResultNotFoundError(DevToolsException):
+class ResultNotFoundError(NotFoundError):
     pass
-
-
