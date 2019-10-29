@@ -17,6 +17,7 @@ class MockSocketHandler(SocketHandler):
         self._domains = []
         self._results = {}
         self._events = {}
+        self._internal_events = {}
 
 
 class SocketHandlerTest(TestCase):
