@@ -65,7 +65,7 @@ class Test_JavascriptDialogEventHandler_handle(JavascriptDialogEventHandlerTest)
 
     def test_dialog_closed(self):
         mock_message = {"method": "Page.javascriptDialogClosed", "params": {}}
-        self.event_handler._dialog = MagicMock(handled=False)
+        self.event_handler._dialog = MagicMock(is_handled=False)
 
         self.event_handler.handle(mock_message)
 
@@ -77,7 +77,7 @@ class Test_JavascriptDialogEventHandler_get_opened_javascript_dialog(
 ):
 
     def test_unhandled_dialog(self):
-        self.event_handler._dialog = mock_dialog = MagicMock(handled=False)
+        self.event_handler._dialog = mock_dialog = MagicMock(is_handled=False)
 
         self.assertEqual(mock_dialog, self.event_handler.get_opened_javascript_dialog())
 
@@ -88,7 +88,7 @@ class Test_JavascriptDialogEventHandler_get_opened_javascript_dialog(
             self.event_handler.get_opened_javascript_dialog()
 
     def test_handled_dialog(self):
-        self.event_handler._dialog = MagicMock(handled=True)
+        self.event_handler._dialog = MagicMock(is_handled=True)
 
         with self.assertRaises(JavascriptDialogNotFoundError):
             self.event_handler.get_opened_javascript_dialog()
