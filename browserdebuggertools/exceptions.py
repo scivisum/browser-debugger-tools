@@ -26,3 +26,6 @@ class ResultNotFoundError(DevToolsException):
     pass
 
 
+class MaxRetriesException(DevToolsException):
+    pass
+

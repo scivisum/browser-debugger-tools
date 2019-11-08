@@ -8,8 +8,8 @@ import requests
 import websocket
 
 from browserdebuggertools.exceptions import (
-    ResultNotFoundError, TabNotFoundError,
-    DomainNotEnabledError, DevToolsTimeoutException, DomainNotFoundError
+    DevToolsException, ResultNotFoundError, TabNotFoundError, MaxRetriesException,
+    DomainNotEnabledError, DevToolsTimeoutException, DomainNotFoundError,
 )
 
 logging.basicConfig(format='%(levelname)s:%(message)s')
@@ -61,7 +61,7 @@ class SocketHandler(object):
             pass
 
     def _setup_websocket(self):
-
+        logging.info("Connecting to websocket %s" % self._websocket_url)
         self._websocket = websocket.create_connection(
             self._websocket_url, timeout=self.CONN_TIMEOUT
         )
@@ -86,7 +86,11 @@ class SocketHandler(object):
         self._connection_closed_count += 1
 
         if self._connection_closed_count > self.MAX_CONNECTION_RETRIES:
-            raise Exception("Websocket connection found closed too many times")
+            raise MaxRetriesException(
+                "Websocket connection found closed %s times within %s seconds" % (
+                    self.MAX_CONNECTION_RETRIES, self.RETRY_COUNT_TIMEOUT
+                )
+            )
 
         self._setup_websocket()
 
@@ -103,11 +107,15 @@ class SocketHandler(object):
         return message
 
     def _get_websocket_url(self, port):
-        targets = requests.get(
+        response = requests.get(
             "http://localhost:{}/json".format(port), timeout=self.CONN_TIMEOUT
-        ).json()
-        logging.debug(targets)
-        tabs = [target for target in targets if target["type"] == "page"]
+        )
+        if not response.ok:
+            raise DevToolsException("{} {} for url: {}".format(
+                response.status_code, response.reason, response.url)
+            )
+
+        tabs = [target for target in response.json() if target["type"] == "page"]
         if not tabs:
             raise TabNotFoundError("There is no tab to connect to.")
         return tabs[0]["webSocketDebuggerUrl"]
