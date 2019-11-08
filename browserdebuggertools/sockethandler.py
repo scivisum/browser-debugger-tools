@@ -86,9 +86,11 @@ class SocketHandler(object):
         self._connection_closed_count += 1
 
         if self._connection_closed_count > self.MAX_CONNECTION_RETRIES:
-            raise MaxRetriesException("Websocket connection found closed %s times within %s" % (
-                self.MAX_CONNECTION_RETRIES, self.RETRY_COUNT_TIMEOUT
-            ))
+            raise MaxRetriesException(
+                "Websocket connection found closed %s times within %s seconds" % (
+                    self.MAX_CONNECTION_RETRIES, self.RETRY_COUNT_TIMEOUT
+                )
+            )
 
         self._setup_websocket()
 
@@ -109,7 +111,9 @@ class SocketHandler(object):
             "http://localhost:{}/json".format(port), timeout=self.CONN_TIMEOUT
         )
         if not response.ok:
-            raise DevToolsException("Cannot connect to browser on port %s" % port)
+            raise DevToolsException("{} {} for url: {}".format(
+                response.status_code, response.reason, response.url)
+            )
 
         tabs = [target for target in response.json() if target["type"] == "page"]
         if not tabs:
