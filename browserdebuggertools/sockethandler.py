@@ -204,7 +204,7 @@ class SocketHandler(object):
             try:
                 return self._find_next_result()
             except ResultNotFoundError:
-                time.sleep(0.5)
+                time.sleep(0.01)
         raise DevToolsTimeoutException(
             "Reached timeout limit of {}, waiting for a response message".format(self.timeout)
         )
