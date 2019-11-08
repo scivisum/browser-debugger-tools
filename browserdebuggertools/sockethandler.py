@@ -196,6 +196,7 @@ class SocketHandler(object):
         if clear:
             self._events[domain] = []
         else:
+            # This is to make the events immutable unless using clear
             events = events[:]
 
         return events
