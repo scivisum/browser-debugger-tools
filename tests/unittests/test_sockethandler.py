@@ -264,6 +264,21 @@ class Test_SocketHandler_get_events(SocketHandlerTest):
         self.assertEqual([], self.socket_handler._events[self.domain])
 
 
+class Test_Sockethandler_clear_all_events(SocketHandlerTest):
+
+    def test(self):
+        self.socket_handler.domains = ["Page", "Network"]
+        self.socket_handler._events = {
+            "Page": [MagicMock(), MagicMock()],
+            "Network": [MagicMock(), MagicMock()]
+        }
+
+        self.socket_handler.reset()
+
+        for key, value in self.socket_handler._events.items():
+            self.assertEqual([], value)
+
+
 @patch(MODULE_PATH + "SocketHandler.execute")
 @patch(MODULE_PATH + "SocketHandler._add_domain")
 class Test_SocketHandler_enable_domain(SocketHandlerTest):

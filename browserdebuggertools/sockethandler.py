@@ -226,6 +226,12 @@ class SocketHandler(object):
 
         return events
 
+    def reset(self):
+        for domain in self._events:
+            self._events[domain] = []
+
+        self._results = {}
+
     def _wait_for_result(self):
         """ Waits for a result to complete within the timeout duration then returns it.
             Raises a DevToolsTimeoutException if it cannot find the result.

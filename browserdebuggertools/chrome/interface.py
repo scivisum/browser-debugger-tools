@@ -33,6 +33,11 @@ class ChromeInterface(object):
     def quit(self):
         self._socket_handler.close()
 
+    def reset(self):
+        """ Clears all stored messages
+        """
+        self._socket_handler.reset()
+
     def get_events(self, domain, clear=False):
         """ Retrieves all events for a given domain
           :param domain: The domain to get the events for.
