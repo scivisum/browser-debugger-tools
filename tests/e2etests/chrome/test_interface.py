@@ -289,7 +289,7 @@ class Test_ChromeInterface_set_baic_auth_headless(
     pass
 
 
-class ChromeInterface_connection_unexpectadely_closed(object):
+class ChromeInterface_connection_unexpectedely_closed(object):
 
     def test(self):
 
@@ -308,12 +308,69 @@ class ChromeInterface_connection_unexpectadely_closed(object):
 
 
 class Test_ChromeInterface_connection_unexpectadely_closed_headed(
-    HeadedChromeInterfaceTest, ChromeInterface_connection_unexpectadely_closed, TestCase
+    HeadedChromeInterfaceTest, ChromeInterface_connection_unexpectedely_closed, TestCase
 ):
     pass
 
 
 class Test_ChromeInterface_connection_unexpectadely_closed_headless(
-    HeadlessChromeInterfaceTest, ChromeInterface_connection_unexpectadely_closed, TestCase
+    HeadlessChromeInterfaceTest, ChromeInterface_connection_unexpectedely_closed, TestCase
+):
+    pass
+
+
+class ChromeInterface_cache_page(object):
+
+    def test_with_page(self):
+
+        assert isinstance(self, ChromeInterfaceTest)
+
+        self.devtools_client.enable_domain("Page")
+
+        base_url = "http://localhost:%s/" % self.testSite.port
+
+        simple_page = "<html><head></head><body><h1>Simple Page</h1></body></html>"
+        simple_page_2 = "<html><head></head><body><h1>Simple Page 2</h1></body></html>"
+
+        fake_page_load = "<script>" \
+                         "function fake_page_load(){" \
+                         "document.getElementById('title-text').innerHTML= 'Fake Title';" \
+                         "window.history.pushState('fake_page', 'Fake Title', '/fake_page');" \
+                         "}" \
+                         "</script>"
+
+        simple_page_3 = '<html><head></head><body><h1 id="title-text">Simple Page 3</h1>%' \
+                        's</body></html>' % fake_page_load
+        fake_page = '<html><head></head><body><h1 id="title-text">Fake Title</h1>' \
+                    '%s</body></html>' % fake_page_load
+
+        # Test caching without page loads (low 3 calls)
+        self.devtools_client.navigate(base_url + "simple_page")
+        self.assertEqual(base_url + "simple_page", self.devtools_client.get_url())
+        self.assertEqual(simple_page, self.devtools_client.get_page_source())
+        self.assertEqual(base_url + "simple_page", self.devtools_client.get_url())
+        self.assertEqual(simple_page, self.devtools_client.get_page_source())
+
+        # Test caching with page loads (low 2 calls)
+        self.devtools_client.navigate(base_url + "simple_page_2")
+        self.devtools_client.navigate(base_url + "fake_load_page")
+        self.assertEqual(base_url + "fake_load_page", self.devtools_client.get_url())
+        self.assertEqual(simple_page_3, self.devtools_client.get_page_source())
+
+        # Test caching with javascript page loads (low 1 call)
+        self.devtools_client.execute_javascript("fake_page_load()")
+
+        self.assertEqual(base_url + "fake_page", self.devtools_client.get_url())
+        self.assertEqual(fake_page, self.devtools_client.get_page_source())
+
+
+class Test_ChromeInterface_cache_page_headed(
+    HeadedChromeInterfaceTest, ChromeInterface_cache_page, TestCase
+):
+    pass
+
+
+class Test_ChromeInterface_cache_page_headless(
+    HeadlessChromeInterfaceTest, ChromeInterface_cache_page, TestCase
 ):
     pass

@@ -7,12 +7,11 @@ from datetime import datetime
 import requests
 import websocket
 
+from browserdebuggertools.eventhandlers import PageLoadEventHandler
 from browserdebuggertools.exceptions import (
     DevToolsException, ResultNotFoundError, TabNotFoundError, MaxRetriesException,
     DomainNotEnabledError, DevToolsTimeoutException, DomainNotFoundError,
 )
-
-logging.basicConfig(format='%(levelname)s:%(message)s')
 
 
 def open_connection_if_closed(socket_handler_method):
@@ -47,6 +46,16 @@ class SocketHandler(object):
         self._events = dict([(k, []) for k in self._domains])
         self._results = {}
 
+        self.event_handlers = {
+            "PageLoad": PageLoadEventHandler(self)
+        }
+
+        self._internal_events = {
+            "Page": {
+                "domContentEventFired": self.event_handlers["PageLoad"],
+                "navigatedWithinDocument": self.event_handlers["PageLoad"],
+            }
+        }
         self._next_result_id = 0
         self._connection_last_closed = None
         self._connection_closed_count = 0
@@ -133,7 +142,11 @@ class SocketHandler(object):
             self._results[result_id] = message
         elif "method" in message:
             domain, event = message["method"].split(".")
-            self._events[domain].append(message)
+            if domain in self._internal_events:
+                if event in self._internal_events[domain]:
+                    self._internal_events[domain][event].handle(message)
+            if domain in self._events:
+                self._events[domain].append(message)
         else:
             logging.warning("Unrecognised message: {}".format(message))
 
@@ -158,13 +171,13 @@ class SocketHandler(object):
 
         return self._results.pop(self._next_result_id)
 
-    def execute(self, domainName, methodName, params=None):
+    def execute(self, domain_name, method_name, params=None):
 
         if params is None:
             params = {}
 
         self._next_result_id += 1
-        method = "{}.{}".format(domainName, methodName)
+        method = "{}.{}".format(domain_name, method_name)
         self._send({
             "method": method, "params": params
         })
@@ -187,9 +200,12 @@ class SocketHandler(object):
             )
 
         self._flush_messages()
-        events = self._events[domain][:]
+        events = self._events[domain]
         if clear:
             self._events[domain] = []
+        else:
+            # This is to make the events immutable unless using clear
+            events = events[:]
 
         return events
 
@@ -209,25 +225,25 @@ class SocketHandler(object):
             "Reached timeout limit of {}, waiting for a response message".format(self.timeout)
         )
 
-    def enable_domain(self, domainName, parameters=None):
+    def enable_domain(self, domain_name, parameters=None):
 
         if not parameters:
             parameters = {}
 
-        self._add_domain(domainName, parameters)
-        result = self.execute(domainName, "enable", parameters)
+        self._add_domain(domain_name, parameters)
+        result = self.execute(domain_name, "enable", parameters)
         if "error" in result:
-            self._remove_domain(domainName)
-            raise DomainNotFoundError("Domain \"{}\" not found.".format(domainName))
+            self._remove_domain(domain_name)
+            raise DomainNotFoundError("Domain \"{}\" not found.".format(domain_name))
 
-        logging.info("\"{}\" domain has been enabled".format(domainName))
+        logging.info("\"{}\" domain has been enabled".format(domain_name))
 
-    def disable_domain(self, domainName):
+    def disable_domain(self, domain_name):
         """ Disables further notifications from the given domain.
         """
-        self._remove_domain(domainName)
-        result = self.execute(domainName, "disable", {})
+        self._remove_domain(domain_name)
+        result = self.execute(domain_name, "disable", {})
         if "error" in result:
-            logging.warn("Domain \"{}\" doesn't exist".format(domainName))
+            logging.warn("Domain \"{}\" doesn't exist".format(domain_name))
         else:
-            logging.info("Domain {} has been disabled".format(domainName))
+            logging.info("Domain {} has been disabled".format(domain_name))

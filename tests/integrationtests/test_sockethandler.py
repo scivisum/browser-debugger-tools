@@ -17,6 +17,7 @@ class MockSocketHandler(SocketHandler):
         self._domains = []
         self._results = {}
         self._events = {}
+        self._internal_events = {}
 
 
 class SocketHandlerTest(TestCase):
@@ -82,3 +83,36 @@ class Test_SocketHandler_can_get_messages(SocketHandlerTest):
         self.socket_handler._flush_messages()
 
         self.assertEqual(mock_result, self.socket_handler._results[1])
+
+
+class Test_SocketHandler_get_events(SocketHandlerTest):
+
+    def test_get_events_returns_copy(self):
+        mock_message = '{"method": "MockDomain.mockEvent", "params": {"key": "value"}}'
+        self.socket_handler._domains = ["MockDomain"]
+        self.socket_handler._events["MockDomain"] = []
+        self.socket_handler._websocket.recv.side_effect = [mock_message, None, None]
+
+        events = self.socket_handler.get_events("MockDomain")
+
+        events[0] = ""
+
+        self.assertEqual(
+            {"method": "MockDomain.mockEvent", "params": {"key": "value"}},
+            self.socket_handler.get_events("MockDomain")[0]
+        )
+
+    def test_get_events_clear(self):
+        mock_message = '{"method": "MockDomain.mockEvent", "params": {"key": "value"}}'
+        self.socket_handler._domains = ["MockDomain"]
+        self.socket_handler._events["MockDomain"] = []
+        self.socket_handler._websocket.recv.side_effect = [mock_message, None, None]
+
+        events = self.socket_handler.get_events("MockDomain")
+
+        events[0] = ""
+
+        self.assertEqual(
+            {"method": "MockDomain.mockEvent", "params": {"key": "value"}},
+            self.socket_handler.get_events("MockDomain")[0]
+        )

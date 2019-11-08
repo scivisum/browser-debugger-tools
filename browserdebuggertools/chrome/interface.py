@@ -28,7 +28,7 @@ class ChromeInterface(object):
         :param domains: Dictionary of dictionaries where the Key is the domain string and the Value
         is a dictionary of the arguments passed with the domain upon enabling.
         """
-        self._socket_handler = SocketHandler(port, timeout, domains=domains)
+        self._socket_handler = SocketHandler(port, timeout, domains=domains)  # type: SocketHandler
 
     def quit(self):
         self._socket_handler.close()
@@ -107,7 +107,13 @@ class ChromeInterface(object):
         return result.get("value")
 
     def get_url(self):
-        return self.execute_javascript("document.URL")
+        # type: () -> str
+        """
+        Consider enabling the Page domain to increase performance.
+
+        :returns: The url of the current page.
+        """
+        return self._socket_handler.event_handlers["PageLoad"].get_current_url()
 
     def get_document_readystate(self):
         """ Gets the document.readyState of the page.
@@ -115,9 +121,13 @@ class ChromeInterface(object):
         return self.execute_javascript("document.readyState")
 
     def get_page_source(self):
-        """ Returns a string serialization of the active document's DOM
+        # type: () -> str
         """
-        return self.execute_javascript("document.documentElement.innerHTML")
+        Consider enabling the Page domain to increase performance.
+
+        :returns: A string serialization of the active document's DOM.
+        """
+        return self._socket_handler.event_handlers["PageLoad"].get_page_source()
 
     def set_user_agent_override(self, user_agent):
         """ Overriding user agent with the given string.
