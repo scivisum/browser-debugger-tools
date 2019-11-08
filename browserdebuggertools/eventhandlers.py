@@ -2,7 +2,9 @@ import logging
 from abc import ABCMeta, abstractmethod
 from typing import Optional
 
-from browserdebuggertools.exceptions import DomainNotEnabledError, JavascriptDialogNotFoundError
+from browserdebuggertools.exceptions import (
+    DomainNotEnabledError, JavascriptDialogNotFoundError, DevToolsException
+)
 from browserdebuggertools.models import JavascriptDialog
 
 
@@ -16,6 +18,9 @@ class EventHandler(object):
     def __init__(self, socket_handler):
         # type: (SocketHandler) -> None
         self._socket_handler = socket_handler
+
+    def raise_unexpected_event_error(self, method):
+        raise DevToolsException("{} doesn't accept this event '{}'".format(self.__class__, method))
 
     @abstractmethod
     def handle(self, message):
@@ -36,6 +41,8 @@ class PageLoadEventHandler(EventHandler):
         elif message.get("method") == "Page.domContentEventFired":
             logging.info("Detected Page Load")
             self._reset()
+        else:
+            self.raise_unexpected_event_error(message["method"])
 
     def _reset(self):
         self._url = None
@@ -77,9 +84,10 @@ class JavascriptDialogEventHandler(EventHandler):
 
         elif message["method"] == "Page.javascriptDialogClosed":
             logging.info("Detected javascript dialog closed")
-            # Instead of setting self._dialog to None we switch the handled property so that we
-            # change the handled property for all instances of the object.
             self._dialog.is_handled = True
+
+        else:
+            self.raise_unexpected_event_error(message["method"])
 
     def get_opened_javascript_dialog(self):
         """
@@ -89,6 +97,9 @@ class JavascriptDialogEventHandler(EventHandler):
         :raises JavascriptDialogNotFoundError:
         """
         self._socket_handler.get_events("Page")
+        # Instead of setting self._dialog to None we switch the handled property so that we
+        # change the handled property for all instances of the object,
+        # hence why we check both conditions.
         if not self._dialog or self._dialog.is_handled:
             raise JavascriptDialogNotFoundError()
         return self._dialog

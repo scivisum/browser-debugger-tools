@@ -18,14 +18,14 @@ class JavascriptDialog(DevToolsEntity):
     PROMPT = "prompt"
     BEFORE_UNLOAD = "beforeunload"
 
-    def __init__(self, socket_handler, message):
+    def __init__(self, socket_handler, params):
         # type: (SocketHandler, Dict) -> None
         self._socket_handler = socket_handler
-        self.message = message["message"]
-        self.type = message["type"]
-        self.url = message["url"]
-        self.has_browser_handler = message["hasBrowserHandler"]
-        self.default_prompt = message.get("defaultPrompt", "")
+        self.message = params["message"]
+        self.type = params["type"]
+        self.url = params["url"]
+        self.has_browser_handler = params["hasBrowserHandler"]
+        self.default_prompt = params.get("defaultPrompt", "")
         self.is_handled = False
 
     def _handle(self, accept=True, prompt_text=None):

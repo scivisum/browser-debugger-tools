@@ -177,7 +177,7 @@ class SocketHandler(object):
 
         return self._results.pop(self._next_result_id)
 
-    def execute(self, domain_name, method_name, params=None):
+    def _execute(self, domain_name, method_name, params=None):
 
         if params is None:
             params = {}
@@ -187,18 +187,17 @@ class SocketHandler(object):
         self._send({
             "method": method, "params": params
         })
+
+    def execute(self, domain_name, method_name, params=None):
+        self._execute(domain_name, method_name, params)
         return self._wait_for_result()
 
     def execute_async(self, domain_name, method_name, params=None):
-        if params is None:
-            params = {}
-
-        self._next_result_id += 1
-        method = "{}.{}".format(domain_name, method_name)
-        self._send({
-            "method": method, "params": params
-        })
-        # TODO: discard used results
+        self._execute(domain_name, method_name, params)
+        # TODO: complete this method
+        # This isn't fully implemented as we don't have a method to retrieve results
+        # Also we'll need a smarter way to manage memory as there is the danger of regressing to
+        # this: https://github.com/scivisum/browser-debugger-tools/pull/20/
         return self._next_result_id
 
     def _add_domain(self, domain, params):
