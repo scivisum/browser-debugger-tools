@@ -433,18 +433,19 @@ class ChromeInterface_test_javascript_dialogs(object):
             self.assertFalse(dialog.default_prompt)
         self.assertEqual(self.url, dialog.url)
 
-        # Test accept
-        dialog.accept()
-
         # Test dismiss
+        dialog.dismiss()
+
         self.open_dialog(type)
         dialog2 = self.devtools_client.get_opened_javascript_dialog()
 
         # Test not cached
         self.assertTrue(dialog.is_handled)
 
+        # Test accept (putting this last so we don't refresh the page beforehand)
+        dialog2.accept()
+
         # Test handled
-        dialog2.dismiss()
         self.assertTrue(dialog2.is_handled)
 
         with self.assertRaises(DevToolsException):
