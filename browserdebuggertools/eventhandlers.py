@@ -57,9 +57,11 @@ class PageLoadEventHandler(EventHandler):
         self.check_page_load()
         return self._url
 
-    def get_root_node_id(self):
+    def get_page_source(self):
         self.check_page_load()
-        return self._root_node_id
+        return self._socket_handler.execute(
+            "DOM", "getOuterHTML", {"backendNodeId": self._root_node_id}
+        )["outerHTML"]
 
 
 class JavascriptDialogEventHandler(EventHandler):

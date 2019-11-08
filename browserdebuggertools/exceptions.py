@@ -32,3 +32,7 @@ class ResultNotFoundError(NotFoundError):
 
 class JavascriptDialogNotFoundError(NotFoundError):
     pass
+
+
+class MaxRetriesException(DevToolsException):
+    pass

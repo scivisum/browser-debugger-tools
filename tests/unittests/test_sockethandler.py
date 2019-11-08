@@ -4,8 +4,10 @@ from unittest import TestCase
 
 from mock import patch, MagicMock
 
-from browserdebuggertools.exceptions import ResultNotFoundError, TabNotFoundError, \
-    DomainNotEnabledError, DomainNotFoundError, DevToolsTimeoutException
+from browserdebuggertools.exceptions import (
+    DevToolsException, ResultNotFoundError, TabNotFoundError,
+    DomainNotEnabledError, DomainNotFoundError, DevToolsTimeoutException,
+)
 from browserdebuggertools.sockethandler import SocketHandler
 
 MODULE_PATH = "browserdebuggertools.sockethandler."
@@ -58,6 +60,12 @@ class Test_Sockethandler__get_websocket_url(TestCase):
         websocket_url = self.socket_handler._get_websocket_url(1234)
 
         self.assertEqual(mock_websocket_url, websocket_url)
+
+    def test_invalid_port(self, requests):
+        requests.get().ok.return_value = False
+
+        with self.assertRaises(DevToolsException):
+            self.socket_handler._get_websocket_url(1234)
 
     def test_no_tabs(self, requests):
         requests.get().json.return_value = [{

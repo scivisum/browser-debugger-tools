@@ -127,9 +127,7 @@ class ChromeInterface(object):
 
         :returns: A string serialization of the active document's DOM.
         """
-        root_node_id = self._socket_handler.event_handlers["PageLoad"].get_root_node_id()
-
-        return self.execute("DOM", "getOuterHTML", {"backendNodeId": root_node_id})["outerHTML"]
+        return self._socket_handler.event_handlers["PageLoad"].get_page_source()
 
     def set_user_agent_override(self, user_agent):
         """ Overriding user agent with the given string.
