@@ -399,6 +399,8 @@ class ChromeInterface_test_javascript_dialogs(object):
         self.devtools_client._socket_handler.execute_async("Runtime", "evaluate", {
             "expression": "reset()",
         })
+        # Allow time for this message
+        time.sleep(2)
 
     def load_javascript_dialog_page(self):
         base_url = "http://localhost:%s/" % self.testSite.port
@@ -410,7 +412,7 @@ class ChromeInterface_test_javascript_dialogs(object):
             "expression": "open_%s()" % dialog, "userGesture": True,
         })
         # wait for the dialog to appear
-        time.sleep(0.5)
+        time.sleep(2)
 
     def test_no_dialog(self):
         with self.assertRaises(JavascriptDialogNotFoundError):
