@@ -25,6 +25,15 @@ class TestSite(object):
         """ % head_component_response_time
 
     @cherrypy.expose
+    def iframe(self):
+
+        return """
+        <html>
+          <body><iframe src="/big_body?size=10"></iframe></body>
+        </html>
+        """
+
+    @cherrypy.expose
     def javascript_file(self, response_time=None):
 
         if response_time:
@@ -34,7 +43,7 @@ class TestSite(object):
 
     @cherrypy.expose
     def big_body(self, size=1000000):
-        return "T" * size
+        return "T" * int(size)
 
     @cherrypy.expose
     def auth_challenge(self, authorized_username="username", authorized_password="password",

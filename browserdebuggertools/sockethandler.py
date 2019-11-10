@@ -13,6 +13,8 @@ from browserdebuggertools.exceptions import (
     DomainNotEnabledError, DevToolsTimeoutException, DomainNotFoundError,
 )
 
+logging.basicConfig(format='%(levelname)s:%(message)s')
+
 
 def open_connection_if_closed(socket_handler_method):
 
@@ -234,7 +236,10 @@ class SocketHandler(object):
         result = self.execute(domain_name, "enable", parameters)
         if "error" in result:
             self._remove_domain(domain_name)
-            raise DomainNotFoundError("Domain \"{}\" not found.".format(domain_name))
+            if result["error"]["message"].endswith("wasn't found"):
+                raise DomainNotFoundError("Domain \"{}\" not found.".format(domain_name))
+            logging.error(result["error"]["message"])
+            raise DevToolsException("Unable to enable domain  \"{}\"".format(domainName))
 
         logging.info("\"{}\" domain has been enabled".format(domain_name))
 

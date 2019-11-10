@@ -3,7 +3,7 @@ import subprocess
 import shutil
 import time
 import tempfile
-from unittest import TestCase
+from unittest import TestCase, main
 
 from requests import ConnectionError
 
@@ -13,7 +13,9 @@ from browserdebuggertools.utils import get_free_port
 from browserdebuggertools.chrome.interface import ChromeInterface
 
 
-BROWSER_PATH = os.environ.get("DEFAULT_CHROME_BROWSER_PATH", "/opt/google/chrome/chrome")
+BROWSER_PATH = os.environ.get(
+    "DEFAULT_CHROME_BROWSER_PATH", "/sv/browsers/chrome_76/chrome"
+)
 TEMP = tempfile.gettempdir()
 
 
@@ -374,3 +376,34 @@ class Test_ChromeInterface_cache_page_headless(
     HeadlessChromeInterfaceTest, ChromeInterface_cache_page, TestCase
 ):
     pass
+
+
+class Test_ChromeInterface_setNetworkInterception_headless(
+    HeadlessChromeInterfaceTest, TestCase
+):
+
+    def test_intercept_iframe(self):
+
+        blacklist = ["*4672209.fls.doubleclick.net*"]
+        self.devtools_client.enable_domain("Fetch", params={
+            "patterns": [{"urlPattern": urlPattern} for urlPattern in blacklist]
+        })
+        self.devtools_client.execute("Network", "setBlockedURLs", {
+            "urls": blacklist
+        })
+        self.devtools_client.enable_domain("Network")
+        start = time.time()
+        url = "https://www.currys.co.uk/gbuk/index.html"
+        self.devtools_client.navigate(url=url)
+
+        while (time.time() - start) < 10:
+            events = self.devtools_client.get_events("Fetch", clear=True)
+            if events:
+                print(events)
+                return
+
+        raise Exception("Did not find Fetch event")
+
+
+if __name__ == "__main__":
+    main()
