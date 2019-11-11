@@ -4,6 +4,7 @@ from setuptools import setup, find_packages
 requires = [
         "requests",
         "websocket-client",
+        "typing",
 ]
 
 

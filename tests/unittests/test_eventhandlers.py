@@ -1,9 +1,11 @@
 from unittest import TestCase
 
-from mock import MagicMock
+from mock import MagicMock, patch
 
-from browserdebuggertools.eventhandlers import PageLoadEventHandler
-from browserdebuggertools.exceptions import DomainNotEnabledError
+from browserdebuggertools.eventhandlers import PageLoadEventHandler, JavascriptDialogEventHandler
+from browserdebuggertools.exceptions import DomainNotEnabledError, JavascriptDialogNotFoundError
+
+MODULE_PATH = "browserdebuggertools.eventhandlers."
 
 
 class PageLoadEventHandlerTest(TestCase):
@@ -43,3 +45,50 @@ class Test_PageLoadEventHandler_check_page_load(PageLoadEventHandlerTest):
 
         self.assertEqual(mock_doc_url, self.event_handler._url)
         self.assertEqual(mock_root_node_id, self.event_handler._root_node_id)
+
+
+class JavascriptDialogEventHandlerTest(TestCase):
+
+    def setUp(self):
+        self.event_handler = JavascriptDialogEventHandler(socket_handler=MagicMock())
+
+
+@patch(MODULE_PATH + "JavascriptDialog", MagicMock())
+class Test_JavascriptDialogEventHandler_handle(JavascriptDialogEventHandlerTest):
+
+    def test_dialog_opened(self):
+        mock_message = {"method": "Page.javascriptDialogOpening", "params": {}}
+
+        self.event_handler.handle(mock_message)
+
+        self.assertIsNotNone(self.event_handler._dialog)
+
+    def test_dialog_closed(self):
+        mock_message = {"method": "Page.javascriptDialogClosed", "params": {}}
+        self.event_handler._dialog = MagicMock(is_handled=False)
+
+        self.event_handler.handle(mock_message)
+
+        self.assertTrue(self.event_handler._dialog.is_handled)
+
+
+class Test_JavascriptDialogEventHandler_get_opened_javascript_dialog(
+    JavascriptDialogEventHandlerTest
+):
+
+    def test_unhandled_dialog(self):
+        self.event_handler._dialog = mock_dialog = MagicMock(is_handled=False)
+
+        self.assertEqual(mock_dialog, self.event_handler.get_opened_javascript_dialog())
+
+    def test_no_dialog(self):
+        self.event_handler._dialog = None
+
+        with self.assertRaises(JavascriptDialogNotFoundError):
+            self.event_handler.get_opened_javascript_dialog()
+
+    def test_handled_dialog(self):
+        self.event_handler._dialog = MagicMock(is_handled=True)
+
+        with self.assertRaises(JavascriptDialogNotFoundError):
+            self.event_handler.get_opened_javascript_dialog()

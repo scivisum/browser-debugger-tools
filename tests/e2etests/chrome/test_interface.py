@@ -7,7 +7,10 @@ from unittest import TestCase
 
 from requests import ConnectionError
 
-from browserdebuggertools.exceptions import DevToolsTimeoutException
+from browserdebuggertools.exceptions import (
+    DevToolsException, DevToolsTimeoutException, JavascriptDialogNotFoundError,
+)
+from browserdebuggertools.models import JavascriptDialog
 from tests.e2etests.testsite.start import Server as TestSiteServer
 from browserdebuggertools.utils import get_free_port
 from browserdebuggertools.chrome.interface import ChromeInterface
@@ -330,7 +333,6 @@ class ChromeInterface_cache_page(object):
         base_url = "http://localhost:%s/" % self.testSite.port
 
         simple_page = "<html><head></head><body><h1>Simple Page</h1></body></html>"
-        simple_page_2 = "<html><head></head><body><h1>Simple Page 2</h1></body></html>"
 
         fake_page_load = "<script>" \
                          "function fake_page_load(){" \
@@ -372,5 +374,115 @@ class Test_ChromeInterface_cache_page_headed(
 
 class Test_ChromeInterface_cache_page_headless(
     HeadlessChromeInterfaceTest, ChromeInterface_cache_page, TestCase
+):
+    pass
+
+
+class ChromeInterface_test_javascript_dialogs(object):
+
+    def setUp(self):
+        self.load_javascript_dialog_page()
+        self.devtools_client.enable_domain("Page")
+
+    def get_dialog_if_present(self):
+        try:
+            self.devtools_client.get_opened_javascript_dialog()
+            return True
+        except JavascriptDialogNotFoundError:
+            return False
+
+    def tearDown(self):
+        # beforeunload behaves differently in headless
+        while self.get_dialog_if_present():
+            self.devtools_client.get_opened_javascript_dialog().accept()
+
+        self.devtools_client._socket_handler.execute_async("Runtime", "evaluate", {
+            "expression": "reset()",
+        })
+        # Allow time for this message
+        time.sleep(2)
+
+    def load_javascript_dialog_page(self):
+        base_url = "http://localhost:%s/" % self.testSite.port
+        self.url = base_url + "javascript_dialog_page"
+        self.devtools_client.navigate(self.url)
+
+    def open_dialog(self, dialog):
+        self.devtools_client._socket_handler.execute_async("Runtime", "evaluate", {
+            "expression": "open_%s()" % dialog, "userGesture": True,
+        })
+        # wait for the dialog to appear
+        time.sleep(2)
+
+    def test_no_dialog(self):
+        with self.assertRaises(JavascriptDialogNotFoundError):
+            self.devtools_client.get_opened_javascript_dialog()
+
+    def dialog_test(self, type, message=None):
+        self.open_dialog(type)
+
+        dialog = self.devtools_client.get_opened_javascript_dialog()
+
+        # Check the dialog
+        self.assertTrue(dialog)
+        self.assertEqual(dialog, self.devtools_client.get_opened_javascript_dialog())
+        self.assertEqual(type, dialog.type)
+        self.assertEqual(message, dialog.message)
+        self.assertFalse(dialog.is_handled)
+        if type != JavascriptDialog.PROMPT:
+            self.assertFalse(dialog.default_prompt)
+        self.assertEqual(self.url, dialog.url)
+
+        # Test dismiss
+        dialog.dismiss()
+
+        self.open_dialog(type)
+        dialog2 = self.devtools_client.get_opened_javascript_dialog()
+
+        # Test not cached
+        self.assertTrue(dialog.is_handled)
+
+        # Test accept (putting this last so we don't refresh the page beforehand)
+        dialog2.accept()
+
+        # Test handled
+        self.assertTrue(dialog2.is_handled)
+
+        with self.assertRaises(DevToolsException):
+            dialog2.dismiss()
+
+    def test_alert(self):
+        self.dialog_test(JavascriptDialog.ALERT, "Something important")
+
+    def test_confirm(self):
+        self.dialog_test(JavascriptDialog.CONFIRM, "Do you want to confirm?")
+
+    def test_prompt(self):
+        type = JavascriptDialog.PROMPT
+        self.dialog_test(type, "Enter some text")
+
+        # Test prompt special interactions
+        self.open_dialog(type)
+
+        dialog = self.devtools_client.get_opened_javascript_dialog()
+        self.assertEqual("default text", dialog.default_prompt)
+
+        dialog.accept_prompt("new text")
+        self.assertEqual("new text", self.devtools_client.execute_javascript(
+            "document.getElementById('prompt_result').innerHTML"
+        ))
+
+    def test_onbeforeunload(self):
+        self.dialog_test(JavascriptDialog.BEFORE_UNLOAD, "")
+
+
+class Test_ChromeInterface_test_javascript_dialogs_headed(
+    HeadedChromeInterfaceTest, ChromeInterface_test_javascript_dialogs, TestCase
+):
+    pass
+
+
+class Test_ChromeInterface_test_javascript_dialogs_headless(
+    HeadlessChromeInterfaceTest, ChromeInterface_test_javascript_dialogs, TestCase
 ):
     pass

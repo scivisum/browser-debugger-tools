@@ -89,6 +89,40 @@ class TestSite(object):
         return "<html><head></head><body><h1 id='title-text'>Simple Page 3</h1>" \
                "%s</body></html>" % fake_page_script
 
+    @cherrypy.expose
+    def javascript_dialog_page(self):
+        return '''
+<html>
+    <head>
+        <title>Javascript Dialogs page</title>
+    </head>
+    <body onbeforeunload="return true;">
+        <button onclick="open_alert()">Alert</button>
+        <button onclick="open_confirm()">Confirm</button>
+        <button onclick="open_prompt()">Prompt</button>
+        <button onclick="open_beforeunload()">OnBeforeUnload</button>
+        <p id="prompt_result"></p>
+        <script>
+            function open_alert(){
+                alert("Something important");
+            }
+            function open_confirm(){
+                confirm("Do you want to confirm?");
+            }
+            function open_prompt(){
+                prompt_result = prompt("Enter some text", "default text");
+                document.getElementById("prompt_result").innerHTML = prompt_result;
+            }
+            function open_beforeunload(){
+                location.reload();
+            }
+            function reset(){
+                window.onbeforeunload = null;
+            }
+        </script>
+    </body>
+</html>'''
+
 
 class Server(object):
 
