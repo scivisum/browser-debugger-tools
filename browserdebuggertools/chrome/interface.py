@@ -165,14 +165,6 @@ class ChromeInterface(object):
 
         return self.execute("Network", "emulateNetworkConditions", network_conditions)
 
-    def set_basic_auth(self, username, password):
-        """
-        Creates a basic type Authorization header from the username and password strings
-        and applies it to all requests
-        """
-        auth = "Basic " + b64encode("%s:%s" % (username, password))
-        self.set_request_headers({"Authorization": auth})
-
     def set_request_headers(self, headers):
         """
         The specified headers are applied to all requests
