@@ -225,10 +225,9 @@ class ChromeInterface(object):
     def _get_iframe_html(self, xpath, _attempts=0):
         # type: (str, int) -> str
 
+        backend_node_id = self._get_iframe_backend_node_id(xpath)
         try:
-            backend_node_id = self._get_iframe_backend_node_id(xpath)
             return self._get_outer_html(backend_node_id)
-
         except ResourceNotFoundError:
             # The cached node doesn't exist any more, so we need to find a new one that matches
             # the xpath. Backend node IDs are unique, so there is not a risk of getting the
@@ -250,6 +249,8 @@ class ChromeInterface(object):
             node_info = self._get_info_for_first_matching_node(xpath)
             backend_node_id = node_info["node"]["contentDocument"]["backendNodeId"]
         except (KeyError, ResourceNotFoundError):
+            # Either we couldn't find a node matching the xpath, or we did find a node but it's
+            # not an iframe.
             raise IFrameNotFoundError()
 
         self._node_map[xpath] = backend_node_id
