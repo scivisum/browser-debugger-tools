@@ -1,4 +1,7 @@
 requests
 mock
+typing
+jinja2
+lxml
 websocket-client==0.56
 cherrypy==17.4.2

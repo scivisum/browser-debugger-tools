@@ -5,6 +5,7 @@ requires = [
         "requests",
         "websocket-client",
         "typing",
+        "lxml"
 ]
 
 
