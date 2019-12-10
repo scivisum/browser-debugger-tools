@@ -3,15 +3,16 @@ import subprocess
 import shutil
 import time
 import tempfile
-from unittest import TestCase
+from unittest import TestCase, main
 
 from requests import ConnectionError
 
 from browserdebuggertools.exceptions import (
     DevToolsException, DevToolsTimeoutException, JavascriptDialogNotFoundError,
+    InvalidXPathError, IFrameNotFoundError
 )
 from browserdebuggertools.models import JavascriptDialog
-from tests.e2etests.testsite.start import Server as TestSiteServer
+from tests.e2etests.testsite.start import Server as TestSiteServer, env
 from browserdebuggertools.utils import get_free_port
 from browserdebuggertools.chrome.interface import ChromeInterface
 
@@ -51,7 +52,6 @@ class ChromeInterfaceTest(object):
 
             try:
                 cls.devtools_client = ChromeInterface(devtools_port)
-                cls.devtools_client.enable_domain("Page")
                 break
 
             except ConnectionError:
@@ -88,8 +88,7 @@ class ChromeInterfaceTest(object):
         time.sleep(3)
         shutil.rmtree(cls.browser_cache_dir)
         cls.testSite.stop()
-
-
+        
 class HeadedChromeInterfaceTest(ChromeInterfaceTest):
 
     headless = False
@@ -103,7 +102,7 @@ class HeadlessChromeInterfaceTest(ChromeInterfaceTest):
 class ChromeInterface_take_screenshot(object):
 
     def setUp(self):
-
+        self.devtools_client.enable_domain("Page")
         self.file_path = "/tmp/screenshot%s.png" % int(time.time()*1000000)
         if os.path.exists(self.file_path):
             os.remove(self.file_path)
@@ -150,6 +149,7 @@ class ChromeInterface_take_screenshot(object):
     def tearDown(self):
         if os.path.exists(self.file_path):
             os.remove(self.file_path)
+        self.devtools_client.disable_domain("Page")
 
 
 class Test_ChromeInterface_take_screenshot_headed(
@@ -165,6 +165,12 @@ class Test_ChromeInterface_take_screenshot_headless(
 
 
 class ChromeInterface_get_document_readystate(object):
+
+    def setUp(self):
+        self.devtools_client.enable_domain("Page")
+
+    def tearDown(self):
+        self.devtools_client.disable_domain("Page")
 
     def test_get_ready_state_dom_complete(self):
 
@@ -217,6 +223,12 @@ class Test_ChromeInterface_get_document_readystate_headless(
 
 class ChromeInterface_emulate_network_conditions(object):
 
+    def setUp(self):
+        self.devtools_client.enable_domain("Network")
+
+    def tearDown(self):
+        self.devtools_client.disable_domain("Network")
+
     def waitForEventWithMethod(self, method, timeout=30):
 
         assert isinstance(self, ChromeInterfaceTest)
@@ -235,7 +247,6 @@ class ChromeInterface_emulate_network_conditions(object):
 
         assert isinstance(self, ChromeInterfaceTest)
 
-        self.devtools_client.enable_domain("Network")
         self.devtools_client.emulate_network_conditions(1, download, upload)
 
         # Page has a default of 1 megabyte response body
@@ -264,11 +275,19 @@ class Test_ChromeInterface_emulate_network_conditions_headless(
 
 class ChromeInterface_set_basic_auth(object):
 
+    def setUp(self):
+        self.devtools_client.enable_domain("Page")
+        self.devtools_client.enable_domain("Network")
+
+    def tearDown(self):
+        self.devtools_client.disable_domain("Page")
+        self.devtools_client.disable_domain("Network")
+
+
     def test_standard_auth_page(self):
 
         assert isinstance(self, ChromeInterfaceTest)
 
-        self.devtools_client.enable_domain("Network")
         url = "http://username:password@localhost:%s/auth_challenge" % self.testSite.port
         self.devtools_client.navigate(url=url)
         self._assert_dom_complete()
@@ -294,11 +313,18 @@ class Test_ChromeInterface_set_baic_auth_headless(
 
 class ChromeInterface_connection_unexpectedely_closed(object):
 
+    def setUp(self):
+        self.devtools_client.enable_domain("Page")
+        self.devtools_client.enable_domain("Network")
+
+    def tearDown(self):
+        self.devtools_client.disable_domain("Page")
+        self.devtools_client.disable_domain("Network")
+
     def test(self):
 
         assert isinstance(self, ChromeInterfaceTest)
 
-        self.devtools_client.enable_domain("Network")
         self.devtools_client.quit()
 
         url = "http://localhost:%s" % self.testSite.port
@@ -324,11 +350,16 @@ class Test_ChromeInterface_connection_unexpectadely_closed_headless(
 
 class ChromeInterface_cache_page(object):
 
+    def setUp(self):
+        self.devtools_client.enable_domain("Page")
+
+    def tearDown(self):
+        self.devtools_client.disable_domain("Page")
+
+
     def test_with_page(self):
 
         assert isinstance(self, ChromeInterfaceTest)
-
-        self.devtools_client.enable_domain("Page")
 
         base_url = "http://localhost:%s/" % self.testSite.port
 
@@ -349,21 +380,21 @@ class ChromeInterface_cache_page(object):
         # Test caching without page loads (low 3 calls)
         self.devtools_client.navigate(base_url + "simple_page")
         self.assertEqual(base_url + "simple_page", self.devtools_client.get_url())
-        self.assertEqual(simple_page, self.devtools_client.get_page_source())
+        self.assertEqual(simple_page, _cleanupHTML(self.devtools_client.get_page_source()))
         self.assertEqual(base_url + "simple_page", self.devtools_client.get_url())
-        self.assertEqual(simple_page, self.devtools_client.get_page_source())
+        self.assertEqual(simple_page, _cleanupHTML(self.devtools_client.get_page_source()))
 
         # Test caching with page loads (low 2 calls)
         self.devtools_client.navigate(base_url + "simple_page_2")
         self.devtools_client.navigate(base_url + "fake_load_page")
         self.assertEqual(base_url + "fake_load_page", self.devtools_client.get_url())
-        self.assertEqual(simple_page_3, self.devtools_client.get_page_source())
+        self.assertEqual(simple_page_3, _cleanupHTML(self.devtools_client.get_page_source()))
 
         # Test caching with javascript page loads (low 1 call)
         self.devtools_client.execute_javascript("fake_page_load()")
 
         self.assertEqual(base_url + "fake_page", self.devtools_client.get_url())
-        self.assertEqual(fake_page, self.devtools_client.get_page_source())
+        self.assertEqual(fake_page, _cleanupHTML(self.devtools_client.get_page_source()))
 
 
 class Test_ChromeInterface_cache_page_headed(
@@ -401,6 +432,7 @@ class ChromeInterface_test_javascript_dialogs(object):
         })
         # Allow time for this message
         time.sleep(2)
+        self.devtools_client.disable_domain("Page")
 
     def load_javascript_dialog_page(self):
         base_url = "http://localhost:%s/" % self.testSite.port
@@ -418,7 +450,7 @@ class ChromeInterface_test_javascript_dialogs(object):
         with self.assertRaises(JavascriptDialogNotFoundError):
             self.devtools_client.get_opened_javascript_dialog()
 
-    def dialog_test(self, type, message=None):
+    def check_dialog(self, type, message=None):
         self.open_dialog(type)
 
         dialog = self.devtools_client.get_opened_javascript_dialog()
@@ -452,14 +484,14 @@ class ChromeInterface_test_javascript_dialogs(object):
             dialog2.dismiss()
 
     def test_alert(self):
-        self.dialog_test(JavascriptDialog.ALERT, "Something important")
+        self.check_dialog(JavascriptDialog.ALERT, "Something important")
 
     def test_confirm(self):
-        self.dialog_test(JavascriptDialog.CONFIRM, "Do you want to confirm?")
+        self.check_dialog(JavascriptDialog.CONFIRM, "Do you want to confirm?")
 
     def test_prompt(self):
         type = JavascriptDialog.PROMPT
-        self.dialog_test(type, "Enter some text")
+        self.check_dialog(type, "Enter some text")
 
         # Test prompt special interactions
         self.open_dialog(type)
@@ -473,7 +505,7 @@ class ChromeInterface_test_javascript_dialogs(object):
         ))
 
     def test_onbeforeunload(self):
-        self.dialog_test(JavascriptDialog.BEFORE_UNLOAD, "")
+        self.check_dialog(JavascriptDialog.BEFORE_UNLOAD, "")
 
 
 class Test_ChromeInterface_test_javascript_dialogs_headed(
@@ -486,3 +518,87 @@ class Test_ChromeInterface_test_javascript_dialogs_headless(
     HeadlessChromeInterfaceTest, ChromeInterface_test_javascript_dialogs, TestCase
 ):
     pass
+
+
+class Test_ChromeInterface_test_get_iframe_source_content(object):
+
+    def setUp(self):
+
+        assert isinstance(self, (ChromeInterfaceTest, TestCase))
+
+        self.devtools_client.enable_domain("Page")
+
+        self.devtools_client.navigate("http://localhost:%s/iframes" % self.testSite.port)
+
+        self._assert_dom_complete()
+
+    def tearDown(self):
+        self.devtools_client.disable_domain("Page")
+
+    def test_get_source_ok(self):
+
+        assert isinstance(self, (ChromeInterfaceTest, TestCase))
+
+        expected_main_page = _cleanupHTML(env.get_template('iframes.html').render())
+        actual_main_page = _cleanupHTML(self.devtools_client.get_page_source())
+        self.assertEqual(expected_main_page, actual_main_page)
+
+        expected_frame_1 = _cleanupHTML(env.get_template('simple_page.html').render())
+        actual_frame_1 = _cleanupHTML( self.devtools_client.get_iframe_source_content(
+            "//iframe[@id='simple_page_frame']"
+        ))
+        self.assertEqual(expected_frame_1, actual_frame_1)
+
+        # Check that we don't fail using invalid backend node id cache
+
+        self.devtools_client.navigate("http://localhost:%s/iframes" % self.testSite.port)
+        self._assert_dom_complete()
+
+        expected_frame_1 = _cleanupHTML(env.get_template('simple_page.html').render())
+        actual_frame_1 = _cleanupHTML(self.devtools_client.get_iframe_source_content(
+            "//iframe[@id='simple_page_frame']"
+        ))
+        self.assertEqual(expected_frame_1, actual_frame_1)
+
+        expected_frame_2 = _cleanupHTML(env.get_template('simple_page_2.html').render())
+        actual_frame_2 = _cleanupHTML(self.devtools_client.get_iframe_source_content(
+            "//iframe[@id='simple_page_frame_2']"
+        ))
+        self.assertEqual(expected_frame_2, actual_frame_2)
+
+    def test_node_not_found(self):
+
+        assert isinstance(self, (ChromeInterfaceTest, TestCase))
+
+        with self.assertRaises(IFrameNotFoundError):
+            self.devtools_client.get_iframe_source_content("//iframe[@id='unknown']")
+
+    def test_node_found_but_its_not_an_iframe(self):
+
+        assert isinstance(self, (ChromeInterfaceTest, TestCase))
+
+        with self.assertRaises(IFrameNotFoundError):
+            self.devtools_client.get_iframe_source_content("//div")
+
+    def test_invalid_xpath(self):
+
+        assert isinstance(self, (ChromeInterfaceTest, TestCase))
+
+        with self.assertRaises(InvalidXPathError):
+            self.devtools_client.get_iframe_source_content("@@")
+
+
+class Test_ChromeInterface_test_get_frame_html_headed(
+    HeadedChromeInterfaceTest, Test_ChromeInterface_test_get_iframe_source_content, TestCase
+):
+    pass
+
+
+class Test_ChromeInterface_test_get_frame_html_headless(
+    HeadlessChromeInterfaceTest, Test_ChromeInterface_test_get_iframe_source_content, TestCase
+):
+    pass
+
+
+def _cleanupHTML(html):
+    return html.replace("\n", "").replace("  ", "")

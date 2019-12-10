@@ -6,7 +6,7 @@ from mock import patch, MagicMock
 
 from browserdebuggertools.exceptions import (
     DevToolsException, ResultNotFoundError, TabNotFoundError,
-    DomainNotEnabledError, DomainNotFoundError, DevToolsTimeoutException,
+    DomainNotEnabledError, DevToolsTimeoutException, MethodNotFoundError
 )
 from browserdebuggertools.sockethandler import SocketHandler
 
@@ -305,13 +305,13 @@ class Test_SocketHandler_enable_domain(SocketHandlerTest):
     def test_invalid_domain(self, _add_domain, execute):
 
         domain_name = "Network"
-        execute.return_value = {"error": "some error"}
+        execute.side_effect = [MethodNotFoundError("Domain not found")]
 
-        with self.assertRaises(DomainNotFoundError):
+        with self.assertRaises(MethodNotFoundError):
             self.socket_handler.enable_domain(domain_name)
 
         execute.assert_called_once_with(domain_name, "enable", {})
-        _add_domain.assert_called_once_with(domain_name, {})
+        _add_domain.assert_not_called()
 
 
 @patch(MODULE_PATH + "time")
