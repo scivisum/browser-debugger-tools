@@ -34,10 +34,6 @@ class ResourceNotFoundError(NotFoundError):
     pass
 
 
-class IFrameNotFoundError(NotFoundError):
-    pass
-
-
 class JavascriptDialogNotFoundError(NotFoundError):
     pass
 

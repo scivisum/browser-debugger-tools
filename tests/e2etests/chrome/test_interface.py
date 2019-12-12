@@ -3,13 +3,13 @@ import subprocess
 import shutil
 import time
 import tempfile
-from unittest import TestCase, main
+from unittest import TestCase
 
 from requests import ConnectionError
 
 from browserdebuggertools.exceptions import (
     DevToolsException, DevToolsTimeoutException, JavascriptDialogNotFoundError,
-    InvalidXPathError, IFrameNotFoundError
+    InvalidXPathError, ResourceNotFoundError
 )
 from browserdebuggertools.models import JavascriptDialog
 from tests.e2etests.testsite.start import Server as TestSiteServer, env
@@ -570,14 +570,14 @@ class Test_ChromeInterface_test_get_iframe_source_content(object):
 
         assert isinstance(self, (ChromeInterfaceTest, TestCase))
 
-        with self.assertRaises(IFrameNotFoundError):
+        with self.assertRaises(ResourceNotFoundError):
             self.devtools_client.get_iframe_source_content("//iframe[@id='unknown']")
 
     def test_node_found_but_its_not_an_iframe(self):
 
         assert isinstance(self, (ChromeInterfaceTest, TestCase))
 
-        with self.assertRaises(IFrameNotFoundError):
+        with self.assertRaises(ResourceNotFoundError):
             self.devtools_client.get_iframe_source_content("//div")
 
     def test_invalid_xpath(self):

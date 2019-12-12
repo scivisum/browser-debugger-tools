@@ -241,6 +241,7 @@ class SocketHandler(object):
             self._events[domain] = []
 
         self._results = {}
+        self._next_result_id = 0
 
     def _wait_for_result(self):
         """ Waits for a result to complete within the timeout duration then returns it.

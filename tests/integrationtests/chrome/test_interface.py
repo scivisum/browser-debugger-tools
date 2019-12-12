@@ -5,7 +5,7 @@ from base64 import b64encode
 
 from mock import MagicMock, patch
 
-from browserdebuggertools.chrome.interface import ChromeInterface
+from browserdebuggertools.chrome.interface import ChromeInterface, _DOMManager
 from browserdebuggertools.exceptions import DevToolsTimeoutException
 from browserdebuggertools.sockethandler import SocketHandler
 
@@ -16,6 +16,7 @@ class MockChromeInterface(ChromeInterface):
 
     def __init__(self, port, timeout=30, domains=None):
         self._socket_handler = MockSocketHandler(port, timeout, domains=domains)
+        self._dom_manager = _DOMManager(self._socket_handler)
 
 
 class MockSocketHandler(SocketHandler):

@@ -4,9 +4,7 @@ from base64 import b64decode, b64encode
 
 from lxml.etree import XPath, XPathSyntaxError
 
-from browserdebuggertools.exceptions import (
-    InvalidXPathError, ResourceNotFoundError, IFrameNotFoundError
-)
+from browserdebuggertools.exceptions import InvalidXPathError, ResourceNotFoundError
 from browserdebuggertools.sockethandler import SocketHandler
 
 
@@ -34,7 +32,7 @@ class ChromeInterface(object):
         is a dictionary of the arguments passed with the domain upon enabling.
         """
         self._socket_handler = SocketHandler(port, timeout, domains=domains)  # type: SocketHandler
-        self._node_map = {}
+        self._dom_manager = _DOMManager(self._socket_handler)
 
     def quit(self):
         self._socket_handler.close()
@@ -43,6 +41,7 @@ class ChromeInterface(object):
         """ Clears all stored messages
         """
         self._socket_handler.reset()
+        self._dom_manager.reset()
 
     def get_events(self, domain, clear=False):
         """ Retrieves all events for a given domain
@@ -208,7 +207,7 @@ class ChromeInterface(object):
         except XPathSyntaxError:
             raise InvalidXPathError("{0} is not a valid xpath".format(xpath))
 
-        return self._get_iframe_html(xpath)
+        return self._dom_manager.get_iframe_html(xpath)
 
     def get_page_source(self):
         # type: () -> str
@@ -219,25 +218,36 @@ class ChromeInterface(object):
         :return: HTML markup
         """
 
-        root_node_id = self._socket_handler.event_handlers["PageLoad"].get_root_node_id()
-        return self._get_outer_html(root_node_id)
+        root_node_id = self._socket_handler.event_handlers["PageLoad"].get_root_backend_node_id()
+        return self._dom_manager.get_outer_html(root_node_id)
 
-    def _get_iframe_html(self, xpath, _attempts=0):
-        # type: (str, int) -> str
+
+class _DOMManager(object):
+
+    def __init__(self, socket_handler):
+        self._socket_handler = socket_handler
+        self._node_map = {}
+
+    def get_outer_html(self, backend_node_id):
+        # type: (int) -> str
+        return self._socket_handler.execute(
+            "DOM", "getOuterHTML", {"backendNodeId": backend_node_id}
+        )["outerHTML"]
+
+    def get_iframe_html(self, xpath):
+        # type: (str) -> str
 
         backend_node_id = self._get_iframe_backend_node_id(xpath)
         try:
-            return self._get_outer_html(backend_node_id)
+            return self.get_outer_html(backend_node_id)
         except ResourceNotFoundError:
             # The cached node doesn't exist any more, so we need to find a new one that matches
             # the xpath. Backend node IDs are unique, so there is not a risk of getting the
             # outer html of the wrong node.
-            if _attempts < 1:
-                if xpath in self._node_map:
-                    del self._node_map[xpath]
-                return self._get_iframe_html(xpath, _attempts=_attempts + 1)
-
-            raise IFrameNotFoundError()
+            if xpath in self._node_map:
+                del self._node_map[xpath]
+            backend_node_id = self._get_iframe_backend_node_id(xpath)
+            return self.get_outer_html(backend_node_id)
 
     def _get_iframe_backend_node_id(self, xpath):
         # type: (str) -> int
@@ -245,13 +255,12 @@ class ChromeInterface(object):
         if xpath in self._node_map:
             return self._node_map[xpath]
 
+        node_info = self._get_info_for_first_matching_node(xpath)
         try:
-            node_info = self._get_info_for_first_matching_node(xpath)
+
             backend_node_id = node_info["node"]["contentDocument"]["backendNodeId"]
-        except (KeyError, ResourceNotFoundError):
-            # Either we couldn't find a node matching the xpath, or we did find a node but it's
-            # not an iframe.
-            raise IFrameNotFoundError()
+        except KeyError:
+            raise ResourceNotFoundError("The node found by xpath '%s' is not an iframe" % xpath)
 
         self._node_map[xpath] = backend_node_id
         return backend_node_id
@@ -259,12 +268,27 @@ class ChromeInterface(object):
     def _get_info_for_first_matching_node(self, xpath):
         # type: (str) -> dict
 
-        search_info = self._perform_search(xpath)
-        if search_info.get("resultCount", 0) > 0:
-            search_results = self._get_search_results(search_info["searchId"], 0, 1)
-            self._discard_search(search_info["searchId"])
-            return self._describe_node(search_results["nodeIds"].pop())
+        with self._get_node_ids(xpath) as node_ids:
+            if node_ids:
+                return self._describe_node(node_ids[0])
         raise ResourceNotFoundError("No matching nodes for xpath: %s" % xpath)
+
+    @contextlib.contextmanager
+    def _get_node_ids(self, xpath, max_matches=1):
+        # type: (str, int) -> list
+
+        assert max_matches > 0
+        search_info = self._perform_search(xpath)
+        try:
+            results = []
+            if search_info["resultCount"] > 0:
+                results = self._get_search_results(
+                    search_info["searchId"], 0, min([max_matches, search_info["resultCount"]])
+                )["nodeIds"]
+            yield results
+
+        finally:
+            self._discard_search(search_info["searchId"])
 
     def _perform_search(self, xpath):
         # type: (str) -> dict
@@ -272,12 +296,12 @@ class ChromeInterface(object):
         # DOM.getDocument must have been called on the current page first otherwise performSearch
         # returns an array of 0s.
         self._socket_handler.event_handlers["PageLoad"].check_page_load()
-        return self.execute("DOM", "performSearch", {"query": xpath})
+        return self._socket_handler.execute("DOM", "performSearch", {"query": xpath})
 
     def _get_search_results(self, search_id, from_index, to_index):
         # type: (str, int, int) -> dict
 
-        return self.execute("DOM", "getSearchResults", {
+        return self._socket_handler.execute("DOM", "getSearchResults", {
             "searchId": search_id, "fromIndex": from_index, "toIndex": to_index
         })
 
@@ -295,9 +319,5 @@ class ChromeInterface(object):
 
         return self._socket_handler.execute("DOM", "describeNode", {"nodeId": node_id})
 
-    def _get_outer_html(self, backend_node_id):
-        # type: (int) -> str
-
-        return self.execute(
-            "DOM", "getOuterHTML", {"backendNodeId": backend_node_id}
-        )["outerHTML"]
+    def reset(self):
+        self._node_map = {}
