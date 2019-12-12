@@ -13,7 +13,8 @@ from browserdebuggertools.eventhandlers import (
 )
 from browserdebuggertools.exceptions import (
     DevToolsException, ResultNotFoundError, TabNotFoundError, MaxRetriesException,
-    DomainNotEnabledError, DevToolsTimeoutException, DomainNotFoundError,
+    DevToolsTimeoutException, DomainNotEnabledError,
+    MethodNotFoundError, UnknownError, ResourceNotFoundError
 )
 
 
@@ -190,7 +191,16 @@ class SocketHandler(object):
 
     def execute(self, domain_name, method_name, params=None):
         self._execute(domain_name, method_name, params)
-        return self._wait_for_result()
+        result = self._wait_for_result()
+        if "error" in result:
+            code = result["error"]["code"]
+            message = result["error"]["message"]
+            if code == -32000:
+                raise ResourceNotFoundError(message)
+            if code == -32601:
+                raise MethodNotFoundError(message)
+            raise UnknownError("DevTools Protocol error code %s: %s" % (code, message))
+        return result
 
     def execute_async(self, domain_name, method_name, params=None):
         self._execute(domain_name, method_name, params)
@@ -231,6 +241,7 @@ class SocketHandler(object):
             self._events[domain] = []
 
         self._results = {}
+        self._next_result_id = 0
 
     def _wait_for_result(self):
         """ Waits for a result to complete within the timeout duration then returns it.
@@ -253,11 +264,8 @@ class SocketHandler(object):
         if not parameters:
             parameters = {}
 
+        self.execute(domain_name, "enable", parameters)
         self._add_domain(domain_name, parameters)
-        result = self.execute(domain_name, "enable", parameters)
-        if "error" in result:
-            self._remove_domain(domain_name)
-            raise DomainNotFoundError("Domain \"{}\" not found.".format(domain_name))
 
         logging.info("\"{}\" domain has been enabled".format(domain_name))
 

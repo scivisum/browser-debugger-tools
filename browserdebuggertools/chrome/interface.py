@@ -2,6 +2,9 @@ import contextlib
 import logging
 from base64 import b64decode, b64encode
 
+from lxml.etree import XPath, XPathSyntaxError
+
+from browserdebuggertools.exceptions import InvalidXPathError, ResourceNotFoundError
 from browserdebuggertools.sockethandler import SocketHandler
 
 
@@ -29,6 +32,7 @@ class ChromeInterface(object):
         is a dictionary of the arguments passed with the domain upon enabling.
         """
         self._socket_handler = SocketHandler(port, timeout, domains=domains)  # type: SocketHandler
+        self._dom_manager = _DOMManager(self._socket_handler)
 
     def quit(self):
         self._socket_handler.close()
@@ -37,6 +41,7 @@ class ChromeInterface(object):
         """ Clears all stored messages
         """
         self._socket_handler.reset()
+        self._dom_manager.reset()
 
     def get_events(self, domain, clear=False):
         """ Retrieves all events for a given domain
@@ -125,15 +130,6 @@ class ChromeInterface(object):
         """
         return self.execute_javascript("document.readyState")
 
-    def get_page_source(self):
-        # type: () -> str
-        """
-        Consider enabling the Page domain to increase performance.
-
-        :returns: A string serialization of the active document's DOM.
-        """
-        return self._socket_handler.event_handlers["PageLoad"].get_page_source()
-
     def set_user_agent_override(self, user_agent):
         """ Overriding user agent with the given string.
         :param user_agent:
@@ -185,9 +181,143 @@ class ChromeInterface(object):
         """
         Gets the opened javascript dialog.
 
-        :raises DomainNotFoundError: If the Page domain isn't enabled
+        :raises DomainNotEnabledError: If the Page domain isn't enabled
         :raises JavascriptDialogNotFoundError: If there is currently no dialog open
         """
         return (
             self._socket_handler.event_handlers["JavascriptDialog"].get_opened_javascript_dialog()
         )
+
+    def get_iframe_source_content(self, xpath):
+        # type: (str) -> str
+        """
+        Returns the HTML markup for an iframe document, where the iframe node can be located in the
+        DOM with the given xpath.
+
+        :param xpath: following the spec 3.1 https://www.w3.org/TR/xpath-31/
+        :return: HTML markup
+        :raises XPathSyntaxError: The given xpath is invalid
+        :raises IFrameNotFoundError: A matching iframe document could not be found
+        :raises UnknownError: The socket handler received a message with an unknown error code
+        """
+
+        try:
+            XPath(xpath)  # Validates the xpath
+
+        except XPathSyntaxError:
+            raise InvalidXPathError("{0} is not a valid xpath".format(xpath))
+
+        return self._dom_manager.get_iframe_html(xpath)
+
+    def get_page_source(self):
+        # type: () -> str
+        """
+        Returns the HTML markup of the current page. Iframe tags are included but the enclosed
+        documents are not. Consider enabling the Page domain to increase performance.
+
+        :return: HTML markup
+        """
+
+        root_node_id = self._socket_handler.event_handlers["PageLoad"].get_root_backend_node_id()
+        return self._dom_manager.get_outer_html(root_node_id)
+
+
+class _DOMManager(object):
+
+    def __init__(self, socket_handler):
+        self._socket_handler = socket_handler
+        self._node_map = {}
+
+    def get_outer_html(self, backend_node_id):
+        # type: (int) -> str
+        return self._socket_handler.execute(
+            "DOM", "getOuterHTML", {"backendNodeId": backend_node_id}
+        )["outerHTML"]
+
+    def get_iframe_html(self, xpath):
+        # type: (str) -> str
+
+        backend_node_id = self._get_iframe_backend_node_id(xpath)
+        try:
+            return self.get_outer_html(backend_node_id)
+        except ResourceNotFoundError:
+            # The cached node doesn't exist any more, so we need to find a new one that matches
+            # the xpath. Backend node IDs are unique, so there is not a risk of getting the
+            # outer html of the wrong node.
+            if xpath in self._node_map:
+                del self._node_map[xpath]
+            backend_node_id = self._get_iframe_backend_node_id(xpath)
+            return self.get_outer_html(backend_node_id)
+
+    def _get_iframe_backend_node_id(self, xpath):
+        # type: (str) -> int
+
+        if xpath in self._node_map:
+            return self._node_map[xpath]
+
+        node_info = self._get_info_for_first_matching_node(xpath)
+        try:
+
+            backend_node_id = node_info["node"]["contentDocument"]["backendNodeId"]
+        except KeyError:
+            raise ResourceNotFoundError("The node found by xpath '%s' is not an iframe" % xpath)
+
+        self._node_map[xpath] = backend_node_id
+        return backend_node_id
+
+    def _get_info_for_first_matching_node(self, xpath):
+        # type: (str) -> dict
+
+        with self._get_node_ids(xpath) as node_ids:
+            if node_ids:
+                return self._describe_node(node_ids[0])
+        raise ResourceNotFoundError("No matching nodes for xpath: %s" % xpath)
+
+    @contextlib.contextmanager
+    def _get_node_ids(self, xpath, max_matches=1):
+        # type: (str, int) -> list
+
+        assert max_matches > 0
+        search_info = self._perform_search(xpath)
+        try:
+            results = []
+            if search_info["resultCount"] > 0:
+                results = self._get_search_results(
+                    search_info["searchId"], 0, min([max_matches, search_info["resultCount"]])
+                )["nodeIds"]
+            yield results
+
+        finally:
+            self._discard_search(search_info["searchId"])
+
+    def _perform_search(self, xpath):
+        # type: (str) -> dict
+
+        # DOM.getDocument must have been called on the current page first otherwise performSearch
+        # returns an array of 0s.
+        self._socket_handler.event_handlers["PageLoad"].check_page_load()
+        return self._socket_handler.execute("DOM", "performSearch", {"query": xpath})
+
+    def _get_search_results(self, search_id, from_index, to_index):
+        # type: (str, int, int) -> dict
+
+        return self._socket_handler.execute("DOM", "getSearchResults", {
+            "searchId": search_id, "fromIndex": from_index, "toIndex": to_index
+        })
+
+    def _discard_search(self, search_id):
+        # type: (str) -> None
+        """
+        Discards search results for the session with the given id. get_search_results should no
+        longer be called for that search.
+        """
+
+        self._socket_handler.execute("DOM", "discardSearchResults", {"searchId": search_id})
+
+    def _describe_node(self, node_id):
+        # type: (str) -> dict
+
+        return self._socket_handler.execute("DOM", "describeNode", {"nodeId": node_id})
+
+    def reset(self):
+        self._node_map = {}

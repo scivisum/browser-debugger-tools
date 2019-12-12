@@ -1,10 +1,17 @@
 import multiprocessing
 import time
+import os
 from base64 import b64decode
 
 import cherrypy
+from jinja2 import Environment, FileSystemLoader
 
 from browserdebuggertools.utils import get_free_port
+
+
+env = Environment(
+    loader=FileSystemLoader(os.path.dirname(os.path.abspath(__file__)) + "/templates")
+)
 
 
 class TestSite(object):
@@ -72,11 +79,15 @@ class TestSite(object):
 
     @cherrypy.expose
     def simple_page(self):
-        return "<html><head></head><body><h1>Simple Page</h1></body></html>"
+        return env.get_template('simple_page.html').render()
 
     @cherrypy.expose
     def simple_page_2(self):
-        return "<html><head></head><body><h1>Simple Page 2</h1></body></html>"
+        return env.get_template('simple_page_2.html').render()
+
+    @cherrypy.expose
+    def iframes(self):
+        return env.get_template('iframes.html').render()
 
     @cherrypy.expose
     def fake_load_page(self):

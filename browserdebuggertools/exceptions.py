@@ -22,11 +22,15 @@ class DomainNotEnabledError(DevToolsException):
     pass
 
 
-class DomainNotFoundError(ProtocolError, NotFoundError):
+class MethodNotFoundError(ProtocolError, NotFoundError):
     pass
 
 
 class ResultNotFoundError(NotFoundError):
+    pass
+
+
+class ResourceNotFoundError(NotFoundError):
     pass
 
 
@@ -35,4 +39,12 @@ class JavascriptDialogNotFoundError(NotFoundError):
 
 
 class MaxRetriesException(DevToolsException):
+    pass
+
+
+class InvalidXPathError(DevToolsException):
+    pass
+
+
+class UnknownError(ProtocolError):
     pass
