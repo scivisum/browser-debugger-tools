@@ -121,9 +121,12 @@ class ChromeInterface_take_screenshot(object):
 
         assert isinstance(self, ChromeInterfaceTest)
 
-        self.devtools_client.navigate(
-            url="http://localhost:%s?main_exchange_response_time=10" % self.testSite.port
-        )
+        with self.devtools_client.set_timeout(30):
+
+            self.devtools_client.navigate(
+                url="http://localhost:%s?main_exchange_response_time=10" % self.testSite.port
+            )
+
         self.devtools_client.take_screenshot(self.file_path)
         self.assertTrue(os.path.exists(self.file_path))
         self.assertTrue(os.path.getsize(self.file_path) >= 5000)
@@ -184,9 +187,10 @@ class ChromeInterface_get_document_readystate(object):
 
         assert isinstance(self, ChromeInterfaceTest)
 
-        self.devtools_client.navigate(
-            url="http://localhost:%s?main_exchange_response_time=10" % self.testSite.port
-        )
+        with self.devtools_client.set_timeout(30):
+            self.devtools_client.navigate(
+                url="http://localhost:%s?main_exchange_response_time=10" % self.testSite.port
+            )
         self.devtools_client.navigate(url="http://localhost:%s" % self.testSite.port)
         self._assert_dom_complete()
         self.assertEqual("complete", self.devtools_client.get_document_readystate())

@@ -119,13 +119,79 @@ class Test_SocketHandler__append(SocketHandlerTest):
         self.assertTrue(mock_event_handler.handle.called)
 
 
-@patch(MODULE_PATH + "SocketHandler._append", MagicMock())
 class Test_SocketHandler_flush_messages(SocketHandlerTest):
 
-    def test_socket_error(self):
-        self.socket_handler._websocket.recv.side_effect = [socket.error]
+    class MockSocketHandler(SocketHandler):
+
+        def __init__(self):
+            self._websocket = MagicMock()
+
+            self._next_result_id = 0
+            self._domains = []
+            self._results = {}
+            self._events = {}
+            self._internal_events = {}
+            self.timer = MagicMock(timed_out=False)
+
+    def setUp(self):
+        self.socket_handler = self.MockSocketHandler()
+
+    def test_get_results(self):
+        mock_result = {"key": "value"}
+        mock_message = '{"id": 1, "result": {"key": "value"}}'
+        self.socket_handler._websocket.recv.side_effect = [mock_message, None]
 
         self.socket_handler._flush_messages()
+
+        self.assertEqual(mock_result, self.socket_handler._results[1])
+
+    def test_get_errors(self):
+        mock_error = {"error": {"key": "value"}}
+        mock_message = '{"id": 1, "error": {"key": "value"}}'
+        self.socket_handler._websocket.recv.side_effect = [mock_message, None]
+
+        self.socket_handler._flush_messages()
+
+        self.assertEqual(mock_error, self.socket_handler._results[1])
+
+    def test_get_events(self):
+        mock_event = {"method": "MockDomain.mockEvent", "params": {"key": "value"}}
+        mock_message = '{"method": "MockDomain.mockEvent", "params": {"key": "value"}}'
+        self.socket_handler._events["MockDomain"] = []
+        self.socket_handler._websocket.recv.side_effect = [mock_message, None]
+
+        self.socket_handler._flush_messages()
+
+        self.assertIn(mock_event, self.socket_handler._events["MockDomain"])
+
+    def test_get_mixed(self):
+        mock_result = {"key": "value"}
+        mock_error = {"error": {"key": "value"}}
+        mock_event = {"method": "MockDomain.mockEvent", "params": {"key": "value"}}
+        mock_result_message = '{"id": 1, "result": {"key": "value"}}'
+        mock_error_message = '{"id": 2, "error": {"key": "value"}}'
+        mock_event_message = '{"method": "MockDomain.mockEvent", "params": {"key": "value"}}'
+
+        self.socket_handler._events["MockDomain"] = []
+        self.socket_handler._websocket.recv.side_effect = [
+            mock_result_message, mock_error_message, mock_event_message, None
+        ]
+
+        self.socket_handler._flush_messages()
+
+        self.assertEqual(mock_result, self.socket_handler._results[1])
+        self.assertEqual(mock_error, self.socket_handler._results[2])
+        self.assertIn(mock_event, self.socket_handler._events["MockDomain"])
+
+    def test_get_messages_then_except(self):
+        mock_result = {"key": "value"}
+        mock_message = '{"id": 1, "result": {"key": "value"}}'
+        self.socket_handler._websocket.recv.side_effect = [mock_message, socket.error]
+
+        self.socket_handler._flush_messages()
+
+        self.assertEqual(mock_result, self.socket_handler._results[1])
+
 
 
 @patch(MODULE_PATH + "SocketHandler._flush_messages", MagicMock())
@@ -314,36 +380,31 @@ class Test_SocketHandler_enable_domain(SocketHandlerTest):
         _add_domain.assert_not_called()
 
 
-@patch(MODULE_PATH + "time")
 class Test_ChromeInterface_wait_for_result(SocketHandlerTest):
 
-    def test(self, time):
+    def test_succeed_immediately(self):
         mock_result = MagicMock()
         self.socket_handler._find_next_result = MagicMock()
         self.socket_handler._find_next_result.side_effect = [mock_result]
-        time.time.side_effect = [1, 2, 3]
+        self.socket_handler.timer = MagicMock(timed_out=False)
 
         result = self.socket_handler._wait_for_result()
 
         self.assertEqual(mock_result, result)
 
-    def test_wait(self, time):
+    def test_wait_and_then_succeeed(self):
+
         mock_result = MagicMock()
         self.socket_handler._find_next_result = MagicMock()
         self.socket_handler._find_next_result.side_effect = [ResultNotFoundError, mock_result]
-        time.time.side_effect = [1, 2, 3]
+        self.socket_handler.timer = MagicMock(timed_out=False)
 
         result = self.socket_handler._wait_for_result()
 
         self.assertEqual(mock_result, result)
 
-    def test_timed_out(self, time):
-        self.socket_handler.timeout = 2
-        self.socket_handler._find_next_result = MagicMock()
-        self.socket_handler._find_next_result.side_effect = [
-            ResultNotFoundError, ResultNotFoundError
-        ]
-        time.time.side_effect = [1, 2, 3]
+    def test_timed_out(self):
 
+        self.socket_handler.timer = MagicMock(timed_out=True)
         with self.assertRaises(DevToolsTimeoutException):
             self.socket_handler._wait_for_result()

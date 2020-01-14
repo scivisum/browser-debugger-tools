@@ -1,118 +1,98 @@
+import json
 import socket
 from unittest import TestCase
 
 from mock import MagicMock
 
+from browserdebuggertools.exceptions import DevToolsTimeoutException
 from browserdebuggertools.sockethandler import SocketHandler
 
 MODULE_PATH = "browserdebuggertools.sockethandler."
 
 
-class MockSocketHandler(SocketHandler):
+class Test_SocketHandler_get_events(TestCase):
 
-    def __init__(self):
-        self._websocket = MagicMock()
+    class _DummyWebsocket(object):
 
-        self._next_result_id = 0
-        self._domains = []
-        self._results = {}
-        self._events = {}
-        self._internal_events = {}
+        def __init__(self):
+            self._result_id = -1
 
+        def recv(self):
+            self._result_id += 1
+            return json.dumps({"method": "Network.Something", "params": {}})
 
-class SocketHandlerTest(TestCase):
+    class MockSocketHandler(SocketHandler):
+
+        def __init__(self):
+            SocketHandler.__init__(self, 1234, 30)
+
+        def _get_websocket_url(self, port):
+            return "ws://localhost:1234/devtools/page/test"
+
+        def _setup_websocket(self):
+            return MagicMock()
 
     def setUp(self):
-        self.socket_handler = MockSocketHandler()
+        self.socket_handler = self.MockSocketHandler()
+
+    def test_timeout_when_getting_events(self):
+
+        self.socket_handler._websocket = self._DummyWebsocket()
+        self.socket_handler.timer.timeout = 1
+        self.socket_handler._domains = {"Network": []}
+
+        with self.assertRaises(DevToolsTimeoutException):
+            self.socket_handler.get_events("Network")
 
 
-class Test_SocketHandler_can_get_messages(SocketHandlerTest):
+class Test_SocketHandler_wait_for_result(TestCase):
 
-    def test_get_results(self):
-        mock_result = {"key": "value"}
-        mock_message = '{"id": 1, "result": {"key": "value"}}'
-        self.socket_handler._websocket.recv.side_effect = [mock_message, None]
+    class _DummyWebsocket(object):
 
-        self.socket_handler._flush_messages()
+        def __init__(self):
+            self._result_id = -1
 
-        self.assertEqual(mock_result, self.socket_handler._results[1])
+        def recv(self):
+            self._result_id += 1
+            return json.dumps({"method": "Network.Something", "params": {}})
 
-    def test_get_errors(self):
-        mock_error = {"error": {"key": "value"}}
-        mock_message = '{"id": 1, "error": {"key": "value"}}'
-        self.socket_handler._websocket.recv.side_effect = [mock_message, None]
+    class MockSocketHandler(SocketHandler):
 
-        self.socket_handler._flush_messages()
+        def __init__(self):
+            SocketHandler.__init__(self, 1234, 30)
 
-        self.assertEqual(mock_error, self.socket_handler._results[1])
+        def _get_websocket_url(self, port):
+            return "ws://localhost:1234/devtools/page/test"
 
-    def test_get_events(self):
-        mock_event = {"method": "MockDomain.mockEvent", "params": {"key": "value"}}
-        mock_message = '{"method": "MockDomain.mockEvent", "params": {"key": "value"}}'
-        self.socket_handler._events["MockDomain"] = []
-        self.socket_handler._websocket.recv.side_effect = [mock_message, None]
+        def _setup_websocket(self):
+            return MagicMock()
 
-        self.socket_handler._flush_messages()
+    def setUp(self):
+        self.socket_handler = self.MockSocketHandler()
 
-        self.assertIn(mock_event, self.socket_handler._events["MockDomain"])
+    def test_no_messages_with_result_timeout(self):
 
-    def test_get_mixed(self):
-        mock_result = {"key": "value"}
-        mock_error = {"error": {"key": "value"}}
-        mock_event = {"method": "MockDomain.mockEvent", "params": {"key": "value"}}
-        mock_result_message = '{"id": 1, "result": {"key": "value"}}'
-        mock_error_message = '{"id": 2, "error": {"key": "value"}}'
-        mock_event_message = '{"method": "MockDomain.mockEvent", "params": {"key": "value"}}'
+        self.socket_handler._websocket = MagicMock(recv=MagicMock(side_effect=socket.error()))
+        self.socket_handler.timer.timeout = 1
+        self.socket_handler._next_result_id = 2
 
-        self.socket_handler._events["MockDomain"] = []
-        self.socket_handler._websocket.recv.side_effect = [
-            mock_result_message, mock_error_message, mock_event_message, None
-        ]
+        with self.assertRaises(DevToolsTimeoutException):
+            self.socket_handler._wait_for_result()
 
-        self.socket_handler._flush_messages()
+    def test_message_spamming_with_result_timeout(self):
 
-        self.assertEqual(mock_result, self.socket_handler._results[1])
-        self.assertEqual(mock_error, self.socket_handler._results[2])
-        self.assertIn(mock_event, self.socket_handler._events["MockDomain"])
+        self.socket_handler._websocket = self._DummyWebsocket()
+        self.socket_handler.timer.timeout = 1
+        self.socket_handler._next_result_id = -1
 
-    def test_get_messages_then_except(self):
-        mock_result = {"key": "value"}
-        mock_message = '{"id": 1, "result": {"key": "value"}}'
-        self.socket_handler._websocket.recv.side_effect = [mock_message, socket.error]
+        with self.assertRaises(DevToolsTimeoutException):
+            self.socket_handler._wait_for_result()
 
-        self.socket_handler._flush_messages()
+    def test_message_spamming_with_result_found(self):
 
-        self.assertEqual(mock_result, self.socket_handler._results[1])
+        self.socket_handler._websocket = self._DummyWebsocket()
+        self.socket_handler.timer.timeout = 1
+        self.socket_handler._next_result_id = 2
 
-
-class Test_SocketHandler_get_events(SocketHandlerTest):
-
-    def test_get_events_returns_copy(self):
-        mock_message = '{"method": "MockDomain.mockEvent", "params": {"key": "value"}}'
-        self.socket_handler._domains = ["MockDomain"]
-        self.socket_handler._events["MockDomain"] = []
-        self.socket_handler._websocket.recv.side_effect = [mock_message, None, None]
-
-        events = self.socket_handler.get_events("MockDomain")
-
-        events[0] = ""
-
-        self.assertEqual(
-            {"method": "MockDomain.mockEvent", "params": {"key": "value"}},
-            self.socket_handler.get_events("MockDomain")[0]
-        )
-
-    def test_get_events_clear(self):
-        mock_message = '{"method": "MockDomain.mockEvent", "params": {"key": "value"}}'
-        self.socket_handler._domains = ["MockDomain"]
-        self.socket_handler._events["MockDomain"] = []
-        self.socket_handler._websocket.recv.side_effect = [mock_message, None, None]
-
-        events = self.socket_handler.get_events("MockDomain")
-
-        events[0] = ""
-
-        self.assertEqual(
-            {"method": "MockDomain.mockEvent", "params": {"key": "value"}},
-            self.socket_handler.get_events("MockDomain")[0]
-        )
+        with self.assertRaises(DevToolsTimeoutException):
+            self.socket_handler._wait_for_result()
