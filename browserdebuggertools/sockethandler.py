@@ -1,3 +1,4 @@
+import contextlib
 import json
 import logging
 import socket
@@ -14,7 +15,7 @@ from browserdebuggertools.eventhandlers import (
 from browserdebuggertools.exceptions import (
     DevToolsException, ResultNotFoundError, TabNotFoundError, MaxRetriesException,
     DevToolsTimeoutException, DomainNotEnabledError,
-    MethodNotFoundError, UnknownError, ResourceNotFoundError
+    MethodNotFoundError, UnknownError, ResourceNotFoundError, TimerException
 )
 
 
@@ -33,6 +34,42 @@ def open_connection_if_closed(socket_handler_method):
     return retry_if_exception
 
 
+class _Timer(object):
+
+    def __init__(self, timeout):
+        """
+        :param timeout: <int> seconds elapsed until considered timed out.
+        """
+        self.timeout = timeout
+        self._start = None
+
+    def start(self):
+        """
+        Capture the start time, cannot be called again without first calling clear().
+        """
+        if self._start:
+            raise TimerException("You cannot start a timer that's already started")
+        self._start = time.time()
+
+    def clear(self):
+        """
+        Make the timer object ready to be used again.
+        """
+        self._start = None
+
+    @property
+    def timed_out(self):
+        """
+        :return: <bool> True if the time from start to now is greater than the timeout threshold
+        """
+        if not self._start:
+            raise TimerException("Timer must have started for there to have been a timeout")
+
+        if (time.time() - self._start) > self.timeout:
+            return True
+        return False
+
+
 class SocketHandler(object):
 
     MAX_CONNECTION_RETRIES = 3
@@ -42,6 +79,7 @@ class SocketHandler(object):
     def __init__(self, port, timeout, domains=None):
 
         self.timeout = timeout
+        self.timer = _Timer(self.timeout)
 
         if not domains:
             domains = {}
@@ -163,9 +201,11 @@ class SocketHandler(object):
         """
         try:
             message = self._recv()
-            while message:
+            while not self.timer.timed_out and message:
                 self._append(message)
                 message = self._recv()
+            if self.timer.timed_out:
+                raise DevToolsTimeoutException("Timed out flushing messages")
         except socket.error:
             return
 
@@ -226,7 +266,9 @@ class SocketHandler(object):
                 'The domain "%s" is not enabled, try enabling it via the interface.' % domain
             )
 
-        self._flush_messages()
+        with self.timed_method():
+            self._flush_messages()
+
         events = self._events[domain]
         if clear:
             self._events[domain] = []
@@ -243,18 +285,28 @@ class SocketHandler(object):
         self._results = {}
         self._next_result_id = 0
 
+    @contextlib.contextmanager
+    def timed_method(self):
+
+        self.timer.start()
+        try:
+            yield
+
+        finally:
+            self.timer.clear()
+
     def _wait_for_result(self):
         """ Waits for a result to complete within the timeout duration then returns it.
             Raises a DevToolsTimeoutException if it cannot find the result.
 
         :return: The result.
           """
-        start = time.time()
-        while not self.timeout or (time.time() - start) < self.timeout:
-            try:
-                return self._find_next_result()
-            except ResultNotFoundError:
-                time.sleep(0.01)
+        with self.timed_method():
+            while not self.timer.timed_out:
+                try:
+                    return self._find_next_result()
+                except ResultNotFoundError:
+                    time.sleep(0.01)
         raise DevToolsTimeoutException(
             "Reached timeout limit of {}, waiting for a response message".format(self.timeout)
         )
