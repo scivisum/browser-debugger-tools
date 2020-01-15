@@ -46,9 +46,5 @@ class MaxRetriesException(DevToolsException):
     pass
 
 
-class InvalidXPathError(DevToolsException):
-    pass
-
-
 class UnknownError(ProtocolError):
     pass
