@@ -13,7 +13,7 @@ PACKAGES = find_packages(include="browserdebuggertools*")
 
 setup(
     name="browserdebuggertools",
-    version="5.1.0",
+    version="5.2.0",
     packages=PACKAGES,
     install_requires=requires,
     license="GNU General Public License v3",
