@@ -9,7 +9,7 @@ from requests import ConnectionError
 
 from browserdebuggertools.exceptions import (
     DevToolsException, DevToolsTimeoutException, JavascriptDialogNotFoundError,
-    InvalidXPathError, ResourceNotFoundError
+    ResourceNotFoundError
 )
 from browserdebuggertools.models import JavascriptDialog
 from tests.e2etests.testsite.start import Server as TestSiteServer, env
@@ -583,13 +583,6 @@ class Test_ChromeInterface_test_get_iframe_source_content(object):
 
         with self.assertRaises(ResourceNotFoundError):
             self.devtools_client.get_iframe_source_content("//div")
-
-    def test_invalid_xpath(self):
-
-        assert isinstance(self, (ChromeInterfaceTest, TestCase))
-
-        with self.assertRaises(InvalidXPathError):
-            self.devtools_client.get_iframe_source_content("@@")
 
 
 class Test_ChromeInterface_test_get_frame_html_headed(

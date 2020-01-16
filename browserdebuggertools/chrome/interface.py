@@ -2,9 +2,7 @@ import contextlib
 import logging
 from base64 import b64decode, b64encode
 
-from lxml.etree import XPath, XPathSyntaxError
-
-from browserdebuggertools.exceptions import InvalidXPathError, ResourceNotFoundError
+from browserdebuggertools.exceptions import ResourceNotFoundError
 from browserdebuggertools.sockethandler import SocketHandler
 
 
@@ -196,17 +194,9 @@ class ChromeInterface(object):
 
         :param xpath: following the spec 3.1 https://www.w3.org/TR/xpath-31/
         :return: HTML markup
-        :raises XPathSyntaxError: The given xpath is invalid
         :raises IFrameNotFoundError: A matching iframe document could not be found
         :raises UnknownError: The socket handler received a message with an unknown error code
         """
-
-        try:
-            XPath(xpath)  # Validates the xpath
-
-        except XPathSyntaxError:
-            raise InvalidXPathError("{0} is not a valid xpath".format(xpath))
-
         return self._dom_manager.get_iframe_html(xpath)
 
     def get_page_source(self):
