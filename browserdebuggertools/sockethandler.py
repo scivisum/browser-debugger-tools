@@ -15,7 +15,8 @@ from browserdebuggertools.eventhandlers import (
 from browserdebuggertools.exceptions import (
     DevToolsException, ResultNotFoundError, TabNotFoundError, MaxRetriesException,
     DevToolsTimeoutException, DomainNotEnabledError,
-    MethodNotFoundError, UnknownError, ResourceNotFoundError, TimerException
+    MethodNotFoundError, UnknownError, ResourceNotFoundError, TimerException,
+    InvalidParametersError
 )
 
 
@@ -239,6 +240,8 @@ class SocketHandler(object):
                 raise ResourceNotFoundError(message)
             if code == -32601:
                 raise MethodNotFoundError(message)
+            if code == -32602:
+                raise InvalidParametersError(message)
             raise UnknownError("DevTools Protocol error code %s: %s" % (code, message))
         return result
 

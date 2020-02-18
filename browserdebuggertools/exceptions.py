@@ -48,3 +48,7 @@ class MaxRetriesException(DevToolsException):
 
 class UnknownError(ProtocolError):
     pass
+
+
+class InvalidParametersError(ProtocolError):
+    pass
