@@ -64,6 +64,28 @@ class TestSite(object):
         cherrypy.response.status = 401
         return "Need to authorize"
 
+    @cherrypy.expose
+    def slow_head(self, resource_response_time=10):
+
+        return """
+            <html>
+              <head>
+                  <script src="/javascript_file?response_time={0}"></script>
+                  <script src="/javascript_file?response_time={0}"></script>
+                  <script src="/javascript_file?response_time={0}"></script>
+                  <script src="/javascript_file?response_time={0}"></script>
+                  <script src="/javascript_file?response_time={0}"></script>
+                  <script src="/javascript_file?response_time={0}"></script>
+                  <script src="/javascript_file?response_time={0}"></script>
+                  <script src="/javascript_file?response_time={0}"></script>
+                  <script src="/javascript_file?response_time={0}"></script>
+                  <script src="/javascript_file?response_time={0}"></script>
+                  <title>Title after resources</title>
+              </head>
+              <body>Finally!</body>
+            </html>
+        """.format(resource_response_time)
+
     @staticmethod
     def is_authenticated(authorized_username, authorized_password):
 
