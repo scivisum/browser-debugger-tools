@@ -147,9 +147,9 @@ class _Timer(object):
         return False
 
 
-class SocketHandler(object):
+class WSSessionManager(object):
 
-    MAX_CONNECTION_RETRIES = 3
+    MAX_RETRY_THREADS = 3
     RETRY_COUNT_TIMEOUT = 300  # Seconds
 
     def __init__(self, port, timeout, domains=None):
@@ -177,8 +177,8 @@ class SocketHandler(object):
             }
         }  # type: Dict[str, Dict[str, EventHandler]]
         self._next_result_id = 0
-        self._connection_last_closed = None
-        self._connection_closed_count = 0
+        self._last_not_ok = None
+        self._messaging_thread_not_ok_count = 0
 
         self.port = port
         self._send_queue = []
@@ -209,26 +209,26 @@ class SocketHandler(object):
                 raise DeadMessagingThread("WS messaging thread died for an unknown reason")
 
         if restart:
-            self.increment_connection_closed_count()
+            self.increment_messaging_thread_not_ok()
             self.setup_ws_session()
 
-    def increment_connection_closed_count(self):
+    def increment_messaging_thread_not_ok(self):
 
         now = datetime.now()
 
         if (
-                self._connection_last_closed and
-                (now - self._connection_last_closed).seconds > self.RETRY_COUNT_TIMEOUT
+            self._last_not_ok and
+            (now - self._last_not_ok).seconds > self.RETRY_COUNT_TIMEOUT
         ):
-            self._connection_closed_count = 0
+            self._messaging_thread_not_ok_count = 0
 
-        self._connection_last_closed = now
-        self._connection_closed_count += 1
+        self._last_not_ok = now
+        self._messaging_thread_not_ok_count += 1
 
-        if self._connection_closed_count > self.MAX_CONNECTION_RETRIES:
+        if self._messaging_thread_not_ok_count > self.MAX_RETRY_THREADS:
             raise MaxRetriesException(
-                "Websocket connection found closed %s times within %s seconds" % (
-                    self.MAX_CONNECTION_RETRIES, self.RETRY_COUNT_TIMEOUT
+                "WS messaging thread not ok %s times within %s seconds" % (
+                    self.MAX_RETRY_THREADS, self.RETRY_COUNT_TIMEOUT
                 )
             )
 
