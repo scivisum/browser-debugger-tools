@@ -7,7 +7,7 @@ from mock import MagicMock, patch
 
 from browserdebuggertools.chrome.interface import ChromeInterface, _DOMManager
 from browserdebuggertools.exceptions import DevToolsTimeoutException
-from browserdebuggertools.sockethandler import SocketHandler
+from browserdebuggertools.wssessionmanager import WSSessionManager
 
 MODULE_PATH = "browserdebuggertools.chrome.interface."
 
@@ -15,17 +15,15 @@ MODULE_PATH = "browserdebuggertools.chrome.interface."
 class MockChromeInterface(ChromeInterface):
 
     def __init__(self, port, timeout=30, domains=None):
-        self._socket_handler = MockSocketHandler(port, timeout, domains=domains)
-        self._dom_manager = _DOMManager(self._socket_handler)
+        self._session_manager = MockWSSessionManager(port, timeout, domains=domains)
+        self._dom_manager = _DOMManager(self._session_manager)
 
 
-class MockSocketHandler(SocketHandler):
+class MockWSSessionManager(WSSessionManager):
 
-    def _setup_websocket(self):
-        return MagicMock()
-
-    def _get_websocket_url(self, port):
-        return MagicMock()
+    def setup_ws_session(self):
+        self.messaging_thread = MagicMock()
+        return self.messaging_thread
 
 
 @patch(MODULE_PATH + "ChromeInterface.execute")
@@ -55,15 +53,15 @@ class ChromeInterfaceTest(TestCase):
 
     def setUp(self):
         self.interface = MockChromeInterface(0)
-        self.interface._socket_handler._websocket.send = MagicMock()
-
+        self.interface._session_manager._recv = MagicMock()
+        self.interface._session_manager._send = MagicMock()
 
 
 class Test_ChromeInterface_set_timeout(ChromeInterfaceTest):
 
     def test_timeout_exception_raised(self):
-        self.interface._socket_handler._websocket.send = MagicMock()
-        self.interface._socket_handler._websocket.recv = MagicMock(return_value=None)
+
+        self.interface._session_manager._recv.return_value = None
 
         start = time.time()
         with self.assertRaises(DevToolsTimeoutException):
@@ -78,44 +76,44 @@ class Test_ChromeInterface_set_timeout(ChromeInterfaceTest):
 class Test_ChromeInterface_get_url(ChromeInterfaceTest):
 
     def load_pages(self, count):
-        mock_message = '{"method": "Page.domContentEventFired"}'
+        mock_message = {"method": "Page.domContentEventFired"}
         messages = [None]
         for _ in range(count):
             messages.insert(0, mock_message)
-        self.interface._socket_handler._websocket.recv.side_effect = messages
+        self.interface._session_manager._recv.side_effect = messages
 
     def load_js_pages(self, count):
-        mock_message = '{"method": "Page.navigatedWithinDocument", "params":{"url": ""}}'
+        mock_message = {"method": "Page.navigatedWithinDocument", "params": {"url": ""}}
         messages = [None]
         for _ in range(count):
             messages.insert(0, mock_message)
-        self.interface._socket_handler._websocket.recv.side_effect = messages
+        self.interface._session_manager._recv.side_effect = messages
 
     def test_page_enabled_cache(self):
-        self.interface._socket_handler._domains["Page"] = {}
-        self.interface._socket_handler._events["Page"] = []
-        self.interface._socket_handler._websocket.recv = MagicMock(return_value=None)
-        self.interface._socket_handler.execute = MagicMock()
+        self.interface._session_manager._domains["Page"] = {}
+        self.interface._session_manager._events["Page"] = []
+        self.interface._session_manager._recv = MagicMock(return_value=None)
+        self.interface._session_manager.execute = MagicMock()
 
         self.interface.get_url()
         self.interface.get_page_source()
-        self.assertEqual(2, self.interface._socket_handler.execute.call_count)
+        self.assertEqual(2, self.interface._session_manager.execute.call_count)
         self.interface.get_url()
         self.interface.get_page_source()
-        self.assertEqual(3, self.interface._socket_handler.execute.call_count)
+        self.assertEqual(3, self.interface._session_manager.execute.call_count)
 
         self.load_pages(2)
-        self.assertEqual(3, self.interface._socket_handler.execute.call_count)
+        self.assertEqual(3, self.interface._session_manager.execute.call_count)
 
         self.interface.get_url()
-        self.interface._socket_handler._websocket.recv = MagicMock(return_value=None)
+        self.interface._session_manager._recv = MagicMock(return_value=None)
         self.interface.get_page_source()
-        self.interface._socket_handler._websocket.recv = MagicMock(return_value=None)
-        self.assertEqual(5, self.interface._socket_handler.execute.call_count)
+        self.interface._session_manager._recv = MagicMock(return_value=None)
+        self.assertEqual(5, self.interface._session_manager.execute.call_count)
 
         self.load_js_pages(1)
         self.interface.get_url()
-        self.assertEqual(5, self.interface._socket_handler.execute.call_count)
-        self.interface._socket_handler._websocket.recv = MagicMock(return_value=None)
+        self.assertEqual(5, self.interface._session_manager.execute.call_count)
+        self.interface._session_manager._recv = MagicMock(return_value=None)
         self.interface.get_page_source()
-        self.assertEqual(6, self.interface._socket_handler.execute.call_count)
+        self.assertEqual(6, self.interface._session_manager.execute.call_count)
