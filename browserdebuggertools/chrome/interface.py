@@ -82,7 +82,7 @@ class ChromeInterface(object):
         """ Switches the timeout to the given value.
         """
         _timeout = self._socket_handler.timeout
-        self._socket_handler.timer.timeout = value
+        self._socket_handler.timeout = value
         try:
             yield
         finally:
