@@ -14,10 +14,6 @@ class DevToolsTimeoutException(DevToolsException):
     pass
 
 
-class TimerException(DevToolsException):
-    pass
-
-
 class TabNotFoundError(NotFoundError):
     pass
 
@@ -47,4 +43,8 @@ class MaxRetriesException(DevToolsException):
 
 
 class UnknownError(ProtocolError):
+    pass
+
+
+class DeadMessagingThread(DevToolsException):
     pass

@@ -4,6 +4,8 @@ import logging
 import socket
 import time
 from datetime import datetime
+from threading import Thread, Event
+
 from typing import Dict
 
 import requests
@@ -15,23 +17,115 @@ from browserdebuggertools.eventhandlers import (
 from browserdebuggertools.exceptions import (
     DevToolsException, ResultNotFoundError, TabNotFoundError, MaxRetriesException,
     DevToolsTimeoutException, DomainNotEnabledError,
-    MethodNotFoundError, UnknownError, ResourceNotFoundError, TimerException
+    MethodNotFoundError, UnknownError, ResourceNotFoundError, DeadMessagingThread
 )
 
 
-def open_connection_if_closed(socket_handler_method):
+class _WSMessagingThread(Thread):
 
-    def retry_if_exception(socket_handler_instance, *args, **kwargs):
+    _CONN_TIMEOUT = 15
+    _BLOCKED_TIMEOUT = 5
+    _MAX_QUEUE_BUFFER = 1000
+    _POLL_INTERVAL = 1
 
+    def __init__(self, port, send_queue, recv_queue, poll_signal):
+        super(_WSMessagingThread, self).__init__()
+        self._port = port
+        self._send_queue = send_queue
+        self._recv_queue = recv_queue
+        self._last_poll = None
+        self._continue = True
+        self._poll_signal = poll_signal
+
+        self.exception = None
+        self.ws = self._get_websocket()
+        self.daemon = True
+
+    def __del__(self):
+        self.close()
+
+    def _get_websocket_url(self, port):
+        response = requests.get(
+            "http://localhost:{}/json".format(port), timeout=self._CONN_TIMEOUT
+        )
+        if not response.ok:
+            raise DevToolsException("{} {} for url: {}".format(
+                response.status_code, response.reason, response.url)
+            )
+
+        tabs = [target for target in response.json() if target["type"] == "page"]
+        if not tabs:
+            raise TabNotFoundError("There is no tab to connect to.")
+        return tabs[0]["webSocketDebuggerUrl"]
+
+    def _get_websocket(self):
+        websocket_url = self._get_websocket_url(self._port)
+        logging.info("Connecting to websocket %s" % websocket_url)
+        ws = websocket.create_connection(
+            websocket_url, timeout=self._CONN_TIMEOUT
+        )
+        ws.settimeout(0)  # Don"t wait for new messages
+        return ws
+
+    @contextlib.contextmanager
+    def _ws_io(self):
+
+        # noinspection PyBroadException
         try:
-            return socket_handler_method(socket_handler_instance, *args, **kwargs)
+            yield
+        except Exception as self.exception:
+            logging.exception("WS messaging thread terminated with exception", exc_info=True)
+        finally:
+            self.close()
 
-        except websocket.WebSocketConnectionClosedException:
+    def close(self):
+        if hasattr(self, "ws") and self.ws:
+            try:
+                self.ws.close()
+            except websocket.WebSocketConnectionClosedException:
+                pass
 
-            socket_handler_instance.increment_connection_closed_count()
-            retry_if_exception(socket_handler_instance, *args, **kwargs)
+    def add_to_send_queue(self, payload):
+        self._send_queue.append(payload)
 
-    return retry_if_exception
+    def get_from_recv_queue(self):
+        if self._recv_queue:
+            return self._recv_queue.pop(0)
+
+    def stop(self):
+        self._continue = False
+
+    def run(self):
+
+        with self._ws_io():
+
+            self._last_poll = time.time()
+            while self._continue:
+
+                while self._send_queue:
+                    message = self._send_queue[0]
+                    self.ws.send(message)
+                    self._send_queue.pop(0)  # Don't pop first, in-case send excepts
+
+                while len(self._recv_queue) < self._MAX_QUEUE_BUFFER:
+                    try:
+                        message = self.ws.recv()
+                        self._recv_queue.append(message)
+                    except socket.error:
+                        break
+
+                self._poll_signal.wait(1)
+                if self._poll_signal.isSet():
+                    self._poll_signal.clear()
+
+                self._last_poll = time.time()
+
+    @property
+    def blocked(self):
+        return (
+            (self._last_poll and ((time.time() - self._last_poll) > self._BLOCKED_TIMEOUT))
+            or False
+        )
 
 
 class _Timer(object):
@@ -41,31 +135,14 @@ class _Timer(object):
         :param timeout: <int> seconds elapsed until considered timed out.
         """
         self.timeout = timeout
-        self._start = None
-
-    def start(self):
-        """
-        Capture the start time, cannot be called again without first calling clear().
-        """
-        if self._start:
-            raise TimerException("You cannot start a timer that's already started")
-        self._start = time.time()
-
-    def clear(self):
-        """
-        Make the timer object ready to be used again.
-        """
-        self._start = None
+        self.start = time.time()
 
     @property
     def timed_out(self):
         """
         :return: <bool> True if the time from start to now is greater than the timeout threshold
         """
-        if not self._start:
-            raise TimerException("Timer must have started for there to have been a timeout")
-
-        if (time.time() - self._start) > self.timeout:
+        if (time.time() - self.start) > self.timeout:
             return True
         return False
 
@@ -74,12 +151,10 @@ class SocketHandler(object):
 
     MAX_CONNECTION_RETRIES = 3
     RETRY_COUNT_TIMEOUT = 300  # Seconds
-    CONN_TIMEOUT = 15  # Connection timeout seconds
 
     def __init__(self, port, timeout, domains=None):
 
         self.timeout = timeout
-        self.timer = _Timer(self.timeout)
 
         if not domains:
             domains = {}
@@ -105,26 +180,37 @@ class SocketHandler(object):
         self._connection_last_closed = None
         self._connection_closed_count = 0
 
-        self._websocket_url = self._get_websocket_url(port)
-        self._websocket = self._setup_websocket()
+        self.port = port
+        self._send_queue = []
+        self._recv_queue = []
+
+        self._poll_signal = Event()
+        self.messaging_thread = self.setup_ws_session()
 
     def __del__(self):
-        try:
-            self.close()
-        except:
-            pass
+        self.close()
 
-    def _setup_websocket(self):
-        logging.info("Connecting to websocket %s" % self._websocket_url)
-        self._websocket = websocket.create_connection(
-            self._websocket_url, timeout=self.CONN_TIMEOUT
-        )
-        self._websocket.settimeout(0)  # Don"t wait for new messages
+    def _check_messaging_thread(self):
 
-        for domain, params in self._domains.items():
-            self.enable_domain(domain, params)
+        if self.messaging_thread.is_alive():
+            if self.messaging_thread.blocked:
+                logging.warning("WS messaging thread appears to be blocked")
+                self.close()
+                restart = True
+            else:
+                restart = False
+        else:
+            if isinstance(self.messaging_thread.exception,
+                          websocket.WebSocketConnectionClosedException):
+                restart = True
+            elif self.messaging_thread.exception:
+                raise self.messaging_thread.exception
+            else:
+                raise DeadMessagingThread("WS messaging thread died for an unknown reason")
 
-        return self._websocket
+        if restart:
+            self.increment_connection_closed_count()
+            self.setup_ws_session()
 
     def increment_connection_closed_count(self):
 
@@ -146,37 +232,41 @@ class SocketHandler(object):
                 )
             )
 
-        self._setup_websocket()
+    def setup_ws_session(self):
 
-    @open_connection_if_closed
+        self.messaging_thread = _WSMessagingThread(
+            self.port, self._send_queue, self._recv_queue, self._poll_signal
+        )
+        self.messaging_thread.start()
+
+        for domain, params in self._domains.items():
+            self.enable_domain(domain, params)
+        return self.messaging_thread
+
     def _send(self, data):
+        self._check_messaging_thread()
         data['id'] = self._next_result_id
-        self._websocket.send(json.dumps(data, sort_keys=True))
+        self.messaging_thread.add_to_send_queue(json.dumps(data, sort_keys=True))
+        self._poll_signal.set()
 
-    @open_connection_if_closed
     def _recv(self):
-        message = self._websocket.recv()
+        self._check_messaging_thread()
+        self._poll_signal.set()
+        message = self.messaging_thread.get_from_recv_queue()
         if message:
             message = json.loads(message)
         return message
 
-    def _get_websocket_url(self, port):
-        response = requests.get(
-            "http://localhost:{}/json".format(port), timeout=self.CONN_TIMEOUT
-        )
-        if not response.ok:
-            raise DevToolsException("{} {} for url: {}".format(
-                response.status_code, response.reason, response.url)
-            )
-
-        tabs = [target for target in response.json() if target["type"] == "page"]
-        if not tabs:
-            raise TabNotFoundError("There is no tab to connect to.")
-        return tabs[0]["webSocketDebuggerUrl"]
-
     def close(self):
-        if hasattr(self, "_websocket"):
-            self._websocket.close()
+        if hasattr(self, "messaging_thread") and self.messaging_thread:
+            self.messaging_thread.stop()
+            timer = _Timer(5)
+            while not timer.timed_out:
+                if not self.messaging_thread.is_alive():
+                    return
+                time.sleep(0.1)
+
+            self.messaging_thread.close()
 
     def _append(self, message):
 
@@ -199,15 +289,13 @@ class SocketHandler(object):
         """ Will only return once all the messages have been retrieved.
             and will hold the thread until so.
         """
-        try:
+        timer = _Timer(self.timeout)
+        message = self._recv()
+        while not timer.timed_out and message:
+            self._append(message)
             message = self._recv()
-            while not self.timer.timed_out and message:
-                self._append(message)
-                message = self._recv()
-            if self.timer.timed_out:
-                raise DevToolsTimeoutException("Timed out flushing messages")
-        except socket.error:
-            return
+        if timer.timed_out:
+            raise DevToolsTimeoutException("Timed out flushing messages after %ss" % timer.timeout)
 
     def _find_next_result(self):
         if self._next_result_id not in self._results:
@@ -266,8 +354,7 @@ class SocketHandler(object):
                 'The domain "%s" is not enabled, try enabling it via the interface.' % domain
             )
 
-        with self.timed_method():
-            self._flush_messages()
+        self._flush_messages()
 
         events = self._events[domain]
         if clear:
@@ -285,28 +372,18 @@ class SocketHandler(object):
         self._results = {}
         self._next_result_id = 0
 
-    @contextlib.contextmanager
-    def timed_method(self):
-
-        self.timer.start()
-        try:
-            yield
-
-        finally:
-            self.timer.clear()
-
     def _wait_for_result(self):
         """ Waits for a result to complete within the timeout duration then returns it.
             Raises a DevToolsTimeoutException if it cannot find the result.
 
         :return: The result.
           """
-        with self.timed_method():
-            while not self.timer.timed_out:
-                try:
-                    return self._find_next_result()
-                except ResultNotFoundError:
-                    time.sleep(0.01)
+        timer = _Timer(self.timeout)
+        while not timer.timed_out:
+            try:
+                return self._find_next_result()
+            except ResultNotFoundError:
+                time.sleep(0.01)
         raise DevToolsTimeoutException(
             "Reached timeout limit of {}, waiting for a response message".format(self.timeout)
         )
