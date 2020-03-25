@@ -17,7 +17,7 @@ from browserdebuggertools.utils import get_free_port
 from browserdebuggertools.chrome.interface import ChromeInterface
 
 
-BROWSER_PATH = os.environ.get("DEFAULT_CHROME_BROWSER_PATH", "/opt/google/chrome/chrome")
+BROWSER_PATH = os.environ.get("DEFAULT_CHROME_BROWSER_PATH", "/sv/browsers/chrome_71/chrome")
 TEMP = tempfile.gettempdir()
 
 
@@ -121,15 +121,15 @@ class ChromeInterface_take_screenshot(object):
 
         assert isinstance(self, ChromeInterfaceTest)
 
-        with self.devtools_client.set_timeout(30):
+        with self.devtools_client.set_timeout(3):
+            with self.assertRaises(DevToolsTimeoutException):
+                self.devtools_client.navigate(
+                    url="http://localhost:%s?main_exchange_response_time=30" % self.testSite.port
+                )
 
-            self.devtools_client.navigate(
-                url="http://localhost:%s?main_exchange_response_time=10" % self.testSite.port
-            )
-
-        self.devtools_client.take_screenshot(self.file_path)
-        self.assertTrue(os.path.exists(self.file_path))
-        self.assertTrue(os.path.getsize(self.file_path) >= 5000)
+        with self.devtools_client.set_timeout(3):
+            with self.assertRaises(DevToolsTimeoutException):
+                self.devtools_client.take_screenshot(self.file_path)
 
     def test_take_screenshot_incomplete_head_component(self):
 
@@ -142,8 +142,7 @@ class ChromeInterface_take_screenshot(object):
 
         time.sleep(3)
 
-        with self.devtools_client.set_timeout(10):
-
+        with self.devtools_client.set_timeout(3):
             self.assertRaises(
                 DevToolsTimeoutException,
                 lambda: self.devtools_client.take_screenshot(self.file_path)
@@ -183,34 +182,26 @@ class ChromeInterface_get_document_readystate(object):
         self._assert_dom_complete()
         self.assertEqual("complete", self.devtools_client.get_document_readystate())
 
-    def test_take_screenshot_incomplete_main_exchange(self):
+    def test_get_ready_state_incomplete_main_exchange(self):
 
         assert isinstance(self, ChromeInterfaceTest)
 
-        with self.devtools_client.set_timeout(30):
+        with self.devtools_client.set_timeout(3):
+            with self.assertRaises(DevToolsTimeoutException):
+                self.devtools_client.navigate(
+                    url="http://localhost:%s?main_exchange_response_time=30" % self.testSite.port
+                )
+                self.assertEqual("loading", self.devtools_client.get_document_readystate())
+
+    def test_get_ready_state_incomplete_head_component(self):
+
+        assert isinstance(self, ChromeInterfaceTest)
+
+        with self.devtools_client.set_timeout(3):
             self.devtools_client.navigate(
-                url="http://localhost:%s?main_exchange_response_time=10" % self.testSite.port
+                url="http://localhost:%s?head_component_response_time=30" % self.testSite.port
             )
-        self.devtools_client.navigate(url="http://localhost:%s" % self.testSite.port)
-        self._assert_dom_complete()
-        self.assertEqual("complete", self.devtools_client.get_document_readystate())
-
-    def test_take_screenshot_incomplete_head_component(self):
-
-        assert isinstance(self, ChromeInterfaceTest)
-
-        self.devtools_client.navigate(
-            url="http://localhost:%s?head_component_response_time=30"
-                % self.testSite.port
-        )
-
-        time.sleep(3)
-
-        with self.devtools_client.set_timeout(10):
-
-            self.devtools_client.navigate(url="http://localhost:%s" % self.testSite.port)
-            self._assert_dom_complete()
-            self.assertEqual("complete", self.devtools_client.get_document_readystate())
+            self.assertEqual("loading", self.devtools_client.get_document_readystate())
 
 
 class Test_ChromeInterface_get_document_readystate_headed(
