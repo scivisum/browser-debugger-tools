@@ -41,6 +41,9 @@ class PageLoadEventHandler(EventHandler):
         elif message.get("method") == "Page.domContentEventFired":
             logging.info("Detected Page Load")
             self._reset()
+        elif message.get("method") == "Page.frameNavigated":
+            logging.info("Detected Frame Navigation")
+            self._reset()
         else:
             self.raise_unexpected_event_error(message["method"])
 

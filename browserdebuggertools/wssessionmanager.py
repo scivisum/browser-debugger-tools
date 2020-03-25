@@ -172,6 +172,7 @@ class WSSessionManager(object):
             "Page": {
                 "domContentEventFired": self.event_handlers["PageLoad"],
                 "navigatedWithinDocument": self.event_handlers["PageLoad"],
+                "frameNavigated": self.event_handlers["PageLoad"],
                 "javascriptDialogOpening": self.event_handlers["JavascriptDialog"],
                 "javascriptDialogClosed": self.event_handlers["JavascriptDialog"],
             }
