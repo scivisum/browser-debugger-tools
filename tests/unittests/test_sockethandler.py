@@ -6,7 +6,7 @@ from mock import patch, MagicMock
 
 from browserdebuggertools.exceptions import (
     DevToolsException, ResultNotFoundError, TabNotFoundError,
-    DomainNotEnabledError, DevToolsTimeoutException, MethodNotFoundError
+    DomainNotEnabledError, DevToolsTimeoutException, MethodNotFoundError, InvalidParametersError
 )
 from browserdebuggertools.sockethandler import SocketHandler
 
@@ -229,7 +229,7 @@ class Test_SocketHandler_find_next_result(SocketHandlerTest):
 @patch(MODULE_PATH + "websocket.send", MagicMock())
 class Test_SocketHandler_execute(SocketHandlerTest):
 
-    def test(self):
+    def test_ok(self):
 
         domain = "Page"
         method = "navigate"
@@ -245,6 +245,16 @@ class Test_SocketHandler_execute(SocketHandlerTest):
         self.socket_handler._send.assert_called_once_with({
             "method": "%s.%s" % (domain, method), "params": {}
         })
+
+    @patch(MODULE_PATH + "SocketHandler._execute", new=MagicMock())
+    def test_error(self):
+
+        self.socket_handler._wait_for_result = MagicMock(
+            return_value={"error": {"code": -32602, "message": "Invalid interceptionId"}}
+        )
+
+        with self.assertRaises(InvalidParametersError):
+            self.socket_handler.execute(MagicMock(), MagicMock(), None)
 
 
 class Test_SocketHandler_add_domain(SocketHandlerTest):
