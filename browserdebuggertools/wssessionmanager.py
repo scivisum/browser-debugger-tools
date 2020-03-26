@@ -73,7 +73,8 @@ class _WSMessagingThread(Thread):
         # noinspection PyBroadException
         try:
             yield
-        except Exception as self.exception:
+        except Exception as e:
+            self.exception = e
             logging.exception("WS messaging thread terminated with exception", exc_info=True)
         finally:
             self.close()
