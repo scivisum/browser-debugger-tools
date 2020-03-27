@@ -3,7 +3,7 @@ import logging
 from base64 import b64decode, b64encode
 
 from browserdebuggertools.exceptions import ResourceNotFoundError
-from browserdebuggertools.sockethandler import SocketHandler
+from browserdebuggertools.wssessionmanager import WSSessionManager
 
 
 logging.basicConfig(format='%(levelname)s:%(message)s')
@@ -29,16 +29,17 @@ class ChromeInterface(object):
         :param domains: Dictionary of dictionaries where the Key is the domain string and the Value
         is a dictionary of the arguments passed with the domain upon enabling.
         """
-        self._socket_handler = SocketHandler(port, timeout, domains=domains)  # type: SocketHandler
-        self._dom_manager = _DOMManager(self._socket_handler)
+        # type: WSSessionManager
+        self._session_manager = WSSessionManager(port, timeout, domains=domains)
+        self._dom_manager = _DOMManager(self._session_manager)
 
     def quit(self):
-        self._socket_handler.close()
+        self._session_manager.close()
 
     def reset(self):
         """ Clears all stored messages
         """
-        self._socket_handler.reset()
+        self._session_manager.reset()
         self._dom_manager.reset()
 
     def get_events(self, domain, clear=False):
@@ -47,7 +48,7 @@ class ChromeInterface(object):
           :param clear: Removes the stored events if set to true.
           :return: List of events.
           """
-        return self._socket_handler.get_events(domain, clear)
+        return self._session_manager.get_events(domain, clear)
 
     def execute(self, domain, method, params=None):
         """ Executes a command and returns the result.
@@ -63,30 +64,30 @@ class ChromeInterface(object):
         :param params: Parameters to be executed
         :return: The result of the command
         """
-        return self._socket_handler.execute(domain, method, params=params)
+        return self._session_manager.execute(domain, method, params=params)
 
     def enable_domain(self, domain, params=None):
         """ Enables notifications for the given domain.
         """
-        self._socket_handler.enable_domain(domain, parameters=params)
+        self._session_manager.enable_domain(domain, parameters=params)
 
     def disable_domain(self, domain):
         """ Disables further notifications from the given domain. Also clears any events cached for
             that domain, it is recommended that you get events for the domain before disabling it.
 
         """
-        self._socket_handler.disable_domain(domain)
+        self._session_manager.disable_domain(domain)
 
     @contextlib.contextmanager
     def set_timeout(self, value):
         """ Switches the timeout to the given value.
         """
-        _timeout = self._socket_handler.timeout
-        self._socket_handler.timer.timeout = value
+        _timeout = self._session_manager.timeout
+        self._session_manager.timeout = value
         try:
             yield
         finally:
-            self._socket_handler.timeout = _timeout
+            self._session_manager.timeout = _timeout
 
     def navigate(self, url):
         """ Navigates to the given url asynchronously
@@ -121,7 +122,7 @@ class ChromeInterface(object):
 
         :returns: The url of the current page.
         """
-        return self._socket_handler.event_handlers["PageLoad"].get_current_url()
+        return self._session_manager.event_handlers["PageLoad"].get_current_url()
 
     def get_document_readystate(self):
         """ Gets the document.readyState of the page.
@@ -183,7 +184,7 @@ class ChromeInterface(object):
         :raises JavascriptDialogNotFoundError: If there is currently no dialog open
         """
         return (
-            self._socket_handler.event_handlers["JavascriptDialog"].get_opened_javascript_dialog()
+            self._session_manager.event_handlers["JavascriptDialog"].get_opened_javascript_dialog()
         )
 
     def get_iframe_source_content(self, xpath):
@@ -208,7 +209,7 @@ class ChromeInterface(object):
         :return: HTML markup
         """
 
-        root_node_id = self._socket_handler.event_handlers["PageLoad"].get_root_backend_node_id()
+        root_node_id = self._session_manager.event_handlers["PageLoad"].get_root_backend_node_id()
         return self._dom_manager.get_outer_html(root_node_id)
 
 

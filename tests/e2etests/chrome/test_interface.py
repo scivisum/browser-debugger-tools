@@ -9,7 +9,7 @@ from requests import ConnectionError
 
 from browserdebuggertools.exceptions import (
     DevToolsException, DevToolsTimeoutException, JavascriptDialogNotFoundError,
-    ResourceNotFoundError
+    ResourceNotFoundError, MessagingThreadIsDeadError
 )
 from browserdebuggertools.models import JavascriptDialog
 from tests.e2etests.testsite.start import Server as TestSiteServer, env
@@ -121,15 +121,15 @@ class ChromeInterface_take_screenshot(object):
 
         assert isinstance(self, ChromeInterfaceTest)
 
-        with self.devtools_client.set_timeout(30):
+        with self.devtools_client.set_timeout(3):
+            with self.assertRaises(DevToolsTimeoutException):
+                self.devtools_client.navigate(
+                    url="http://localhost:%s?main_exchange_response_time=30" % self.testSite.port
+                )
 
-            self.devtools_client.navigate(
-                url="http://localhost:%s?main_exchange_response_time=10" % self.testSite.port
-            )
-
-        self.devtools_client.take_screenshot(self.file_path)
-        self.assertTrue(os.path.exists(self.file_path))
-        self.assertTrue(os.path.getsize(self.file_path) >= 5000)
+        with self.devtools_client.set_timeout(3):
+            with self.assertRaises(DevToolsTimeoutException):
+                self.devtools_client.take_screenshot(self.file_path)
 
     def test_take_screenshot_incomplete_head_component(self):
 
@@ -142,8 +142,7 @@ class ChromeInterface_take_screenshot(object):
 
         time.sleep(3)
 
-        with self.devtools_client.set_timeout(10):
-
+        with self.devtools_client.set_timeout(3):
             self.assertRaises(
                 DevToolsTimeoutException,
                 lambda: self.devtools_client.take_screenshot(self.file_path)
@@ -183,34 +182,26 @@ class ChromeInterface_get_document_readystate(object):
         self._assert_dom_complete()
         self.assertEqual("complete", self.devtools_client.get_document_readystate())
 
-    def test_take_screenshot_incomplete_main_exchange(self):
+    def test_get_ready_state_incomplete_main_exchange(self):
 
         assert isinstance(self, ChromeInterfaceTest)
 
-        with self.devtools_client.set_timeout(30):
+        with self.devtools_client.set_timeout(3):
+            with self.assertRaises(DevToolsTimeoutException):
+                self.devtools_client.navigate(
+                    url="http://localhost:%s?main_exchange_response_time=30" % self.testSite.port
+                )
+                self.assertEqual("loading", self.devtools_client.get_document_readystate())
+
+    def test_get_ready_state_incomplete_head_component(self):
+
+        assert isinstance(self, ChromeInterfaceTest)
+
+        with self.devtools_client.set_timeout(3):
             self.devtools_client.navigate(
-                url="http://localhost:%s?main_exchange_response_time=10" % self.testSite.port
+                url="http://localhost:%s?head_component_response_time=30" % self.testSite.port
             )
-        self.devtools_client.navigate(url="http://localhost:%s" % self.testSite.port)
-        self._assert_dom_complete()
-        self.assertEqual("complete", self.devtools_client.get_document_readystate())
-
-    def test_take_screenshot_incomplete_head_component(self):
-
-        assert isinstance(self, ChromeInterfaceTest)
-
-        self.devtools_client.navigate(
-            url="http://localhost:%s?head_component_response_time=30"
-                % self.testSite.port
-        )
-
-        time.sleep(3)
-
-        with self.devtools_client.set_timeout(10):
-
-            self.devtools_client.navigate(url="http://localhost:%s" % self.testSite.port)
-            self._assert_dom_complete()
-            self.assertEqual("complete", self.devtools_client.get_document_readystate())
+            self.assertEqual("loading", self.devtools_client.get_document_readystate())
 
 
 class Test_ChromeInterface_get_document_readystate_headed(
@@ -315,15 +306,11 @@ class Test_ChromeInterface_set_baic_auth_headless(
     pass
 
 
-class ChromeInterface_connection_unexpectedely_closed(object):
+class ChromeInterface_connection_unexpectedly_dead(object):
 
     def setUp(self):
         self.devtools_client.enable_domain("Page")
         self.devtools_client.enable_domain("Network")
-
-    def tearDown(self):
-        self.devtools_client.disable_domain("Page")
-        self.devtools_client.disable_domain("Network")
 
     def test(self):
 
@@ -332,22 +319,19 @@ class ChromeInterface_connection_unexpectedely_closed(object):
         self.devtools_client.quit()
 
         url = "http://localhost:%s" % self.testSite.port
-        self.devtools_client.navigate(url=url)
 
-        self._assert_dom_complete()
-
-        responses_received = self._get_responses_received()
-        self.assertIn(200, responses_received)
+        with self.assertRaises(MessagingThreadIsDeadError):
+            self.devtools_client.navigate(url=url)
 
 
 class Test_ChromeInterface_connection_unexpectadely_closed_headed(
-    HeadedChromeInterfaceTest, ChromeInterface_connection_unexpectedely_closed, TestCase
+    HeadedChromeInterfaceTest, ChromeInterface_connection_unexpectedly_dead, TestCase
 ):
     pass
 
 
 class Test_ChromeInterface_connection_unexpectadely_closed_headless(
-    HeadlessChromeInterfaceTest, ChromeInterface_connection_unexpectedely_closed, TestCase
+    HeadlessChromeInterfaceTest, ChromeInterface_connection_unexpectedly_dead, TestCase
 ):
     pass
 
@@ -431,7 +415,7 @@ class ChromeInterface_test_javascript_dialogs(object):
         while self.get_dialog_if_present():
             self.devtools_client.get_opened_javascript_dialog().accept()
 
-        self.devtools_client._socket_handler.execute_async("Runtime", "evaluate", {
+        self.devtools_client._session_manager.execute_async("Runtime", "evaluate", {
             "expression": "reset()",
         })
         # Allow time for this message
@@ -444,7 +428,7 @@ class ChromeInterface_test_javascript_dialogs(object):
         self.devtools_client.navigate(self.url)
 
     def open_dialog(self, dialog):
-        self.devtools_client._socket_handler.execute_async("Runtime", "evaluate", {
+        self.devtools_client._session_manager.execute_async("Runtime", "evaluate", {
             "expression": "open_%s()" % dialog, "userGesture": True,
         })
         # wait for the dialog to appear
