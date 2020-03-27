@@ -128,7 +128,7 @@ class _WSMessagingThread(Thread):
     @property
     def blocked(self):
         return (
-            (self._last_poll and ((time.time() - self._last_poll) > self._BLOCKED_TIMEOUT))
+            self._last_poll and ((time.time() - self._last_poll) > self._BLOCKED_TIMEOUT)
         )
 
 
