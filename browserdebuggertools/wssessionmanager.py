@@ -3,6 +3,7 @@ import json
 import logging
 import socket
 import time
+import collections
 from datetime import datetime
 from threading import Thread, Event
 
@@ -17,7 +18,7 @@ from browserdebuggertools.eventhandlers import (
 from browserdebuggertools.exceptions import (
     DevToolsException, ResultNotFoundError, TabNotFoundError, MaxRetriesException,
     DevToolsTimeoutException, DomainNotEnabledError,
-    MethodNotFoundError, UnknownError, ResourceNotFoundError, DeadMessagingThread
+    MethodNotFoundError, UnknownError, ResourceNotFoundError, MessagingThreadIsDeadError
 )
 
 
@@ -75,7 +76,7 @@ class _WSMessagingThread(Thread):
             yield
         except Exception as e:
             self.exception = e
-            logging.exception("WS messaging thread terminated with exception", exc_info=True)
+            logging.warning("WS messaging thread terminated with exception", exc_info=True)
         finally:
             self.close()
 
@@ -91,7 +92,7 @@ class _WSMessagingThread(Thread):
 
     def get_from_recv_queue(self):
         if self._recv_queue:
-            return self._recv_queue.pop(0)
+            return self._recv_queue.popleft()
 
     def stop(self):
         self._continue = False
@@ -106,16 +107,19 @@ class _WSMessagingThread(Thread):
                 while self._send_queue:
                     message = self._send_queue[0]
                     self.ws.send(message)
-                    self._send_queue.pop(0)  # Don't pop first, in-case send excepts
+                    self._send_queue.popleft()  # Don't pop first, in-case send excepts
 
                 while len(self._recv_queue) < self._MAX_QUEUE_BUFFER:
                     try:
                         message = self.ws.recv()
                         self._recv_queue.append(message)
-                    except socket.error:
+                    except socket.error as e:
+                        # We expect [Errno 11] when there are no more messages to read
+                        if "[Errno 11] Resource temporarily unavailable" not in str(e):
+                            raise
                         break
 
-                self._poll_signal.wait(1)
+                self._poll_signal.wait(self._POLL_INTERVAL)
                 if self._poll_signal.isSet():
                     self._poll_signal.clear()
 
@@ -125,7 +129,6 @@ class _WSMessagingThread(Thread):
     def blocked(self):
         return (
             (self._last_poll and ((time.time() - self._last_poll) > self._BLOCKED_TIMEOUT))
-            or False
         )
 
 
@@ -143,9 +146,7 @@ class _Timer(object):
         """
         :return: <bool> True if the time from start to now is greater than the timeout threshold
         """
-        if (time.time() - self.start) > self.timeout:
-            return True
-        return False
+        return (time.time() - self.start) > self.timeout
 
 
 class WSSessionManager(object):
@@ -183,11 +184,12 @@ class WSSessionManager(object):
         self._messaging_thread_not_ok_count = 0
 
         self.port = port
-        self._send_queue = []
-        self._recv_queue = []
+        self._send_queue = collections.deque()
+        self._recv_queue = collections.deque()
 
         self._poll_signal = Event()
-        self.messaging_thread = self.setup_ws_session()
+        self.messaging_thread = None
+        self.setup_ws_session()
 
     def __del__(self):
         self.close()
@@ -208,7 +210,7 @@ class WSSessionManager(object):
             elif self.messaging_thread.exception:
                 raise self.messaging_thread.exception
             else:
-                raise DeadMessagingThread("WS messaging thread died for an unknown reason")
+                raise MessagingThreadIsDeadError("WS messaging thread died for an unknown reason")
 
         if restart:
             self.increment_messaging_thread_not_ok()
@@ -243,7 +245,6 @@ class WSSessionManager(object):
 
         for domain, params in self._domains.items():
             self.enable_domain(domain, params)
-        return self.messaging_thread
 
     def _send(self, data):
         self._check_messaging_thread()
@@ -288,15 +289,14 @@ class WSSessionManager(object):
             logging.warning("Unrecognised message: {}".format(message))
 
     def _flush_messages(self):
-        """ Will only return once all the messages have been retrieved.
-            and will hold the thread until so.
+        """ Will only return once all the messages have been retrieved or the timeout is reached
         """
         timer = _Timer(self.timeout)
         message = self._recv()
         while not timer.timed_out and message:
             self._append(message)
             message = self._recv()
-        if timer.timed_out:
+        if timer.timed_out and message:
             raise DevToolsTimeoutException("Timed out flushing messages after %ss" % timer.timeout)
 
     def _find_next_result(self):

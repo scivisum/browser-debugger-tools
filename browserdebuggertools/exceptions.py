@@ -46,5 +46,5 @@ class UnknownError(ProtocolError):
     pass
 
 
-class DeadMessagingThread(DevToolsException):
+class MessagingThreadIsDeadError(DevToolsException):
     pass

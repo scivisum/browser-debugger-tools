@@ -9,7 +9,7 @@ from requests import ConnectionError
 
 from browserdebuggertools.exceptions import (
     DevToolsException, DevToolsTimeoutException, JavascriptDialogNotFoundError,
-    ResourceNotFoundError, DeadMessagingThread
+    ResourceNotFoundError, MessagingThreadIsDeadError
 )
 from browserdebuggertools.models import JavascriptDialog
 from tests.e2etests.testsite.start import Server as TestSiteServer, env
@@ -17,7 +17,7 @@ from browserdebuggertools.utils import get_free_port
 from browserdebuggertools.chrome.interface import ChromeInterface
 
 
-BROWSER_PATH = os.environ.get("DEFAULT_CHROME_BROWSER_PATH", "/sv/browsers/chrome_71/chrome")
+BROWSER_PATH = os.environ.get("DEFAULT_CHROME_BROWSER_PATH", "/opt/google/chrome/chrome")
 TEMP = tempfile.gettempdir()
 
 
@@ -320,7 +320,7 @@ class ChromeInterface_connection_unexpectedly_dead(object):
 
         url = "http://localhost:%s" % self.testSite.port
 
-        with self.assertRaises(DeadMessagingThread):
+        with self.assertRaises(MessagingThreadIsDeadError):
             self.devtools_client.navigate(url=url)
 
 

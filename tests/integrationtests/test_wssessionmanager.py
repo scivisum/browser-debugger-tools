@@ -35,7 +35,7 @@ class _DummyWebsocket(object):
             return self.queue.pop(0)
         if self.recv_message:
             return self.recv_message
-        raise socket.error()
+        raise socket.error("[Errno 11] Resource temporarily unavailable")
 
 
 class Test_WSSessionManager_get_events(TestCase):

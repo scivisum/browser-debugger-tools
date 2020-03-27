@@ -1,3 +1,4 @@
+import collections
 import copy
 from unittest import TestCase
 
@@ -70,8 +71,8 @@ class Test__WSMessagingThread_run(MessagingThreadTest):
 
     def test(self):
 
-        self.messaging_thread._send_queue = []
-        self.messaging_thread._recv_queue = []
+        self.messaging_thread._send_queue = collections.deque()
+        self.messaging_thread._recv_queue = collections.deque()
         self.messaging_thread._continue = True
         self.messaging_thread._MAX_QUEUE_BUFFER = 2
 
@@ -122,8 +123,6 @@ class Test__WSMessagingThread_blocked(MessagingThreadTest):
         self.messaging_thread._last_poll = now - self.messaging_thread._BLOCKED_TIMEOUT + 1
 
         self.assertFalse(self.messaging_thread.blocked)
-
-
 
 
 class Test_WSSessionManager__append(SessionManagerTest):
