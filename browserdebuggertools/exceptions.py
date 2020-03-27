@@ -48,3 +48,7 @@ class UnknownError(ProtocolError):
 
 class MessagingThreadIsDeadError(DevToolsException):
     pass
+
+
+class InvalidParametersError(ProtocolError):
+    pass

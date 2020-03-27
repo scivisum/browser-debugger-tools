@@ -7,8 +7,8 @@ from websocket import WebSocketConnectionClosedException
 
 from browserdebuggertools.exceptions import (
     DevToolsException, ResultNotFoundError, TabNotFoundError,
-    DomainNotEnabledError, DevToolsTimeoutException, MethodNotFoundError
-)
+    DomainNotEnabledError, DevToolsTimeoutException, MethodNotFoundError,
+    InvalidParametersError)
 from browserdebuggertools.wssessionmanager import WSSessionManager, _WSMessagingThread
 
 MODULE_PATH = "browserdebuggertools.wssessionmanager."
@@ -274,6 +274,16 @@ class Test_WSSessionManager_execute(SessionManagerTest):
         self.session_manager._send.assert_called_once_with({
             "method": "%s.%s" % (domain, method), "params": {}
         })
+
+    @patch(MODULE_PATH + "WSSessionManager._execute", new=MagicMock())
+    def test_error(self):
+
+        self.session_manager._wait_for_result = MagicMock(
+            return_value={"error": {"code": -32602, "message": "Invalid interceptionId"}}
+        )
+
+        with self.assertRaises(InvalidParametersError):
+            self.session_manager.execute(MagicMock(), MagicMock(), None)
 
 
 class Test_WSSessionManager_add_domain(SessionManagerTest):

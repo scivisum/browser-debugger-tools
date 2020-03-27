@@ -18,7 +18,8 @@ from browserdebuggertools.eventhandlers import (
 from browserdebuggertools.exceptions import (
     DevToolsException, ResultNotFoundError, TabNotFoundError, MaxRetriesException,
     DevToolsTimeoutException, DomainNotEnabledError,
-    MethodNotFoundError, UnknownError, ResourceNotFoundError, MessagingThreadIsDeadError
+    MethodNotFoundError, UnknownError, ResourceNotFoundError, MessagingThreadIsDeadError,
+    InvalidParametersError
 )
 
 
@@ -329,6 +330,8 @@ class WSSessionManager(object):
                 raise ResourceNotFoundError(message)
             if code == -32601:
                 raise MethodNotFoundError(message)
+            if code == -32602:
+                raise InvalidParametersError(message)
             raise UnknownError("DevTools Protocol error code %s: %s" % (code, message))
         return result
 
