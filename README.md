@@ -30,6 +30,6 @@ The client provides some devtools interface methods, for example:
 
 Or more generally you can call remote methods according to the devtools protocol spec (https://chromedevtools.github.io/devtools-protocol/tot/Network), for example
 ```
->> self.devtools_client.execute(domain="Emulation", method="enable")
->> self.devtools_client.execute("Emulation", "setGeolocationOverride", args={"latitude": 20, "longitude": 35})
+>> self.devtools_client.execute(domain="Network", method="enable")
+>> self.devtools_client.execute("Network", "setUserAgentOverride", {"userAgent": "Test"})
 ````
