@@ -5,7 +5,7 @@ import socket
 import time
 import collections
 from datetime import datetime
-from threading import Thread, Event
+from threading import Thread, Event, Lock
 
 from typing import Dict
 
@@ -186,6 +186,8 @@ class WSSessionManager(object):
         }  # type: Dict[str, EventHandler]
 
         self._next_result_id = 0
+        self._result_id_lock = Lock()
+
         self._last_not_ok = None
         self._messaging_thread_not_ok_count = 0
 
@@ -254,7 +256,6 @@ class WSSessionManager(object):
 
     def _send(self, data):
         self._check_messaging_thread()
-        data['id'] = self._next_result_id
         self.messaging_thread.add_to_send_queue(json.dumps(data, sort_keys=True))
         self._poll_signal.set()
 
@@ -299,29 +300,36 @@ class WSSessionManager(object):
         if timer.timed_out and message:
             raise DevToolsTimeoutException("Timed out flushing messages after %ss" % timer.timeout)
 
-    def _find_next_result(self):
-        if self._next_result_id not in self._results:
-            self._flush_messages()
+    def _find_result(self, result_id):
+        if result_id not in self._results:
+            self._flush_messages()  # If we have a result handler we don't need to worry about this
 
-        if self._next_result_id not in self._results:
-            raise ResultNotFoundError("Result not found for id: {} .".format(self._next_result_id))
+        if result_id not in self._results:
+            raise ResultNotFoundError("Result not found for id: {} .".format(result_id))
 
-        return self._results.pop(self._next_result_id)
+        return self._results.pop(result_id)
+
+    def get_new_result_id(self):
+        with self._result_id_lock:
+            self._next_result_id += 1
+            return self._next_result_id
 
     def _execute(self, domain_name, method_name, params=None):
 
         if params is None:
             params = {}
 
-        self._next_result_id += 1
+        result_id = self.get_new_result_id()
+
         method = "{}.{}".format(domain_name, method_name)
         self._send({
-            "method": method, "params": params
+            "id": result_id, "method": method, "params": params
         })
+        return result_id
 
     def execute(self, domain_name, method_name, params=None):
-        self._execute(domain_name, method_name, params)
-        result = self._wait_for_result()
+        result_id = self._execute(domain_name, method_name, params)
+        result = self._wait_for_result(result_id)
         if "error" in result:
             code = result["error"]["code"]
             message = result["error"]["message"]
@@ -335,12 +343,12 @@ class WSSessionManager(object):
         return result
 
     def execute_async(self, domain_name, method_name, params=None):
-        self._execute(domain_name, method_name, params)
+        result_id = self._execute(domain_name, method_name, params)
         # TODO: complete this method
         # This isn't fully implemented as we don't have a method to retrieve results
         # Also we'll need a smarter way to manage memory as there is the danger of regressing to
         # this: https://github.com/scivisum/browser-debugger-tools/pull/20/
-        return self._next_result_id
+        return result_id
 
     def _add_domain(self, domain, params):
         if domain not in self._domains:
@@ -379,7 +387,7 @@ class WSSessionManager(object):
         self._results = {}
         self._next_result_id = 0
 
-    def _wait_for_result(self):
+    def _wait_for_result(self, result_id):
         """ Waits for a result to complete within the timeout duration then returns it.
             Raises a DevToolsTimeoutException if it cannot find the result.
 
@@ -388,7 +396,7 @@ class WSSessionManager(object):
         timer = _Timer(self.timeout)
         while not timer.timed_out:
             try:
-                return self._find_next_result()
+                return self._find_result(result_id)
             except ResultNotFoundError:
                 time.sleep(0.01)
         raise DevToolsTimeoutException(
