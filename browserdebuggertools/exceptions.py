@@ -26,10 +26,6 @@ class MethodNotFoundError(ProtocolError, NotFoundError):
     pass
 
 
-class ResultNotFoundError(NotFoundError):
-    pass
-
-
 class ResourceNotFoundError(NotFoundError):
     pass
 

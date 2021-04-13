@@ -16,7 +16,7 @@ from browserdebuggertools.eventhandlers import (
     EventHandler, PageLoadEventHandler, JavascriptDialogEventHandler
 )
 from browserdebuggertools.exceptions import (
-    DevToolsException, ResultNotFoundError, TabNotFoundError, MaxRetriesException,
+    DevToolsException, TabNotFoundError, MaxRetriesException,
     DevToolsTimeoutException, DomainNotEnabledError,
     MethodNotFoundError, UnknownError, ResourceNotFoundError, MessagingThreadIsDeadError,
     InvalidParametersError
@@ -30,7 +30,7 @@ class _WSMessagingThread(Thread):
     _MAX_QUEUE_BUFFER = 1000
     _POLL_INTERVAL = 1
 
-    def __init__(self, port, send_queue, recv_queue, poll_signal, event_handlers):
+    def __init__(self, port, send_queue, recv_queue, poll_signal, results, event_handlers):
         super(_WSMessagingThread, self).__init__()
         self._port = port
         self._send_queue = send_queue
@@ -38,6 +38,7 @@ class _WSMessagingThread(Thread):
         self._last_poll = None
         self._continue = True
         self._poll_signal = poll_signal
+        self._results = results
 
         self.exception = None
         self.ws = self._get_websocket()
@@ -101,9 +102,16 @@ class _WSMessagingThread(Thread):
 
     def add_to_recv_queue(self, payload):
         message = json.loads(payload)
-        self._recv_queue.append(message)
-        if message.get("method") in self._internal_events:
-            self._internal_events[message["method"]].handle(message)
+        if "result" in message:
+            self._results[message["id"]] = message.get("result")
+        elif "error" in message:
+            self._results[message.pop("id")] = message
+        elif "method" in message:
+            self._recv_queue.append(message)
+            if message.get("method") in self._internal_events:
+                self._internal_events[message["method"]].handle(message)
+        else:
+            logging.warning("Unrecognised message: {}".format(message))
 
     def get_from_recv_queue(self):
         if self._recv_queue:
@@ -247,7 +255,8 @@ class WSSessionManager(object):
     def setup_ws_session(self):
 
         self.messaging_thread = _WSMessagingThread(
-            self.port, self._send_queue, self._recv_queue, self._poll_signal, self.event_handlers
+            self.port, self._send_queue, self._recv_queue, self._poll_signal, self._results,
+            self.event_handlers
         )
         self.messaging_thread.start()
 
@@ -276,18 +285,9 @@ class WSSessionManager(object):
             self.messaging_thread.close()
 
     def _append(self, message):
-
-        if "result" in message:
-            self._results[message["id"]] = message.get("result")
-        elif "error" in message:
-            result_id = message.pop("id")
-            self._results[result_id] = message
-        elif "method" in message:
-            domain, event = message["method"].split(".")
-            if domain in self._events:
-                self._events[domain].append(message)
-        else:
-            logging.warning("Unrecognised message: {}".format(message))
+        domain, event = message["method"].split(".")
+        if domain in self._events:
+            self._events[domain].append(message)
 
     def _flush_messages(self):
         """ Will only return once all the messages have been retrieved or the timeout is reached
@@ -299,15 +299,6 @@ class WSSessionManager(object):
             message = self._recv()
         if timer.timed_out and message:
             raise DevToolsTimeoutException("Timed out flushing messages after %ss" % timer.timeout)
-
-    def _find_result(self, result_id):
-        if result_id not in self._results:
-            self._flush_messages()  # If we have a result handler we don't need to worry about this
-
-        if result_id not in self._results:
-            raise ResultNotFoundError("Result not found for id: {} .".format(result_id))
-
-        return self._results.pop(result_id)
 
     def get_new_result_id(self):
         with self._result_id_lock:
@@ -387,6 +378,9 @@ class WSSessionManager(object):
         self._results = {}
         self._next_result_id = 0
 
+        self._send_queue.clear()
+        self._recv_queue.clear()
+
     def _wait_for_result(self, result_id):
         """ Waits for a result to complete within the timeout duration then returns it.
             Raises a DevToolsTimeoutException if it cannot find the result.
@@ -395,10 +389,10 @@ class WSSessionManager(object):
           """
         timer = _Timer(self.timeout)
         while not timer.timed_out:
-            try:
-                return self._find_result(result_id)
-            except ResultNotFoundError:
-                time.sleep(0.01)
+            if result_id in self._results:
+                return self._results.pop(result_id)
+
+            time.sleep(0.01)
         raise DevToolsTimeoutException(
             "Reached timeout limit of {}, waiting for a response message".format(self.timeout)
         )
