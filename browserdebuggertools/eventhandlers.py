@@ -3,7 +3,7 @@ from abc import ABCMeta, abstractmethod
 from typing import Optional
 
 from browserdebuggertools.exceptions import (
-    DomainNotEnabledError, JavascriptDialogNotFoundError, DevToolsException
+    JavascriptDialogNotFoundError, DevToolsException
 )
 from browserdebuggertools.models import JavascriptDialog
 
@@ -52,9 +52,7 @@ class PageLoadEventHandler(EventHandler):
         self._root_node_id = None
 
     def check_page_load(self):
-        try:
-            self._socket_handler.get_events("Page")
-        except DomainNotEnabledError:
+        if not self._socket_handler.is_domain_enabled("Page"):
             self._reset()
 
         if self._root_node_id is None:
@@ -97,7 +95,6 @@ class JavascriptDialogEventHandler(EventHandler):
         :return JavascriptDialog:
         :raises JavascriptDialogNotFoundError:
         """
-        self._socket_handler.get_events("Page")
         # Instead of setting self._dialog to None we switch the handled property so that we
         # change the handled property for all instances of the object,
         # hence why we check both conditions.

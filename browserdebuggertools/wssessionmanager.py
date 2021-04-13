@@ -30,7 +30,7 @@ class _WSMessagingThread(Thread):
     _MAX_QUEUE_BUFFER = 1000
     _POLL_INTERVAL = 1
 
-    def __init__(self, port, send_queue, recv_queue, poll_signal):
+    def __init__(self, port, send_queue, recv_queue, poll_signal, event_handlers):
         super(_WSMessagingThread, self).__init__()
         self._port = port
         self._send_queue = send_queue
@@ -42,6 +42,14 @@ class _WSMessagingThread(Thread):
         self.exception = None
         self.ws = self._get_websocket()
         self.daemon = True
+
+        self._internal_events = {
+            "Page.domContentEventFired": event_handlers["PageLoad"],
+            "Page.navigatedWithinDocument": event_handlers["PageLoad"],
+            "Page.frameNavigated": event_handlers["PageLoad"],
+            "Page.javascriptDialogOpening": event_handlers["JavascriptDialog"],
+            "Page.javascriptDialogClosed": event_handlers["JavascriptDialog"],
+        }  # type: Dict[str, EventHandler]
 
     def __del__(self):
         self.close()
@@ -91,6 +99,12 @@ class _WSMessagingThread(Thread):
     def add_to_send_queue(self, payload):
         self._send_queue.append(payload)
 
+    def add_to_recv_queue(self, payload):
+        message = json.loads(payload)
+        self._recv_queue.append(message)
+        if message.get("method") in self._internal_events:
+            self._internal_events[message["method"]].handle(message)
+
     def get_from_recv_queue(self):
         if self._recv_queue:
             return self._recv_queue.popleft()
@@ -113,7 +127,7 @@ class _WSMessagingThread(Thread):
                 while len(self._recv_queue) < self._MAX_QUEUE_BUFFER:
                     try:
                         message = self.ws.recv()
-                        self._recv_queue.append(message)
+                        self.add_to_recv_queue(message)
                     except socket.error as e:
                         # We expect [Errno 11] when there are no more messages to read
                         if "[Errno 11] Resource temporarily unavailable" not in str(e):
@@ -171,15 +185,6 @@ class WSSessionManager(object):
             "JavascriptDialog": JavascriptDialogEventHandler(self),
         }  # type: Dict[str, EventHandler]
 
-        self._internal_events = {
-            "Page": {
-                "domContentEventFired": self.event_handlers["PageLoad"],
-                "navigatedWithinDocument": self.event_handlers["PageLoad"],
-                "frameNavigated": self.event_handlers["PageLoad"],
-                "javascriptDialogOpening": self.event_handlers["JavascriptDialog"],
-                "javascriptDialogClosed": self.event_handlers["JavascriptDialog"],
-            }
-        }  # type: Dict[str, Dict[str, EventHandler]]
         self._next_result_id = 0
         self._last_not_ok = None
         self._messaging_thread_not_ok_count = 0
@@ -240,7 +245,7 @@ class WSSessionManager(object):
     def setup_ws_session(self):
 
         self.messaging_thread = _WSMessagingThread(
-            self.port, self._send_queue, self._recv_queue, self._poll_signal
+            self.port, self._send_queue, self._recv_queue, self._poll_signal, self.event_handlers
         )
         self.messaging_thread.start()
 
@@ -256,10 +261,7 @@ class WSSessionManager(object):
     def _recv(self):
         self._check_messaging_thread()
         self._poll_signal.set()
-        message = self.messaging_thread.get_from_recv_queue()
-        if message:
-            message = json.loads(message)
-        return message
+        return self.messaging_thread.get_from_recv_queue()
 
     def close(self):
         if hasattr(self, "messaging_thread") and self.messaging_thread:
@@ -281,9 +283,6 @@ class WSSessionManager(object):
             self._results[result_id] = message
         elif "method" in message:
             domain, event = message["method"].split(".")
-            if domain in self._internal_events:
-                if event in self._internal_events[domain]:
-                    self._internal_events[domain][event].handle(message)
             if domain in self._events:
                 self._events[domain].append(message)
         else:
@@ -353,8 +352,11 @@ class WSSessionManager(object):
             del self._domains[domain]
             del self._events[domain]
 
+    def is_domain_enabled(self, domain):
+        return domain in self._domains
+
     def get_events(self, domain, clear=False):
-        if domain not in self._domains:
+        if not self.is_domain_enabled(domain):
             raise DomainNotEnabledError(
                 'The domain "%s" is not enabled, try enabling it via the interface.' % domain
             )
