@@ -24,11 +24,17 @@ from browserdebuggertools.exceptions import (
 
 
 class _MessageHandler(object):
+    """ Handles incoming messages from the websocket chooses whether to store or discard them
 
-    def __init__(self, event_handlers):
+        This object stores the results of sent messages and acts as a buffer for the events that ma
+
+    """
+    def __init__(self, events, event_handlers):
         self._results = {}
-        self._event_buffer = collections.deque()
+        self._events = events
+        self.event_lock = Lock()
 
+        # Do we need to clear these?
         self._internal_events = {
             "Page.domContentEventFired": event_handlers["PageLoad"],
             "Page.navigatedWithinDocument": event_handlers["PageLoad"],
@@ -39,21 +45,31 @@ class _MessageHandler(object):
 
     def clear(self):
         self._results = {}
-        self._event_buffer.clear()
+        for domain in self._events:
+            self._events[domain] = []
 
-    def event_buffer_size(self):
-        return len(self._event_buffer)
+    def get_events(self, domain, clear=False):
+        with self.event_lock:
+            events = self._events[domain]
+            if clear:
+                self._events[domain] = []
+            else:
+                # This is to make the events immutable unless using clear
+                events = events[:]
 
-    def pop_event(self):
-        if self._event_buffer:
-            return self._event_buffer.popleft()
-        return None
+        return events
 
     def get_result(self, result_id):
 
         if result_id in self._results:
             return self._results.pop(result_id)
         return None
+
+    def _append_event(self, message):
+        domain, event = message["method"].split(".")
+        if domain in self._events:
+            with self.event_lock:
+                self._events[domain].append(message)
 
     def process_message(self, payload):
         message = json.loads(payload)
@@ -62,7 +78,7 @@ class _MessageHandler(object):
         elif "error" in message:
             self._results[message.pop("id")] = message
         elif "method" in message:
-            self._event_buffer.append(message)
+            self._append_event(message)
             if message.get("method") in self._internal_events:
                 self._internal_events[message["method"]].handle(message)
         else:
@@ -155,7 +171,7 @@ class _WSMessagingThread(Thread):
                     self.ws.send(message)
                     self._send_queue.popleft()  # Don't pop first, in-case send excepts
 
-                while self._message_handler.event_buffer_size() < self._MAX_QUEUE_BUFFER:
+                while True:
                     try:
                         message = self.ws.recv()
                         self._message_handler.process_message(message)
@@ -208,7 +224,7 @@ class WSSessionManager(object):
             domains = {}
 
         self._domains = domains
-        self._events = dict([(k, []) for k in self._domains])
+        events = dict([(k, []) for k in self._domains])
 
         self.event_handlers = {
             "PageLoad": PageLoadEventHandler(self),
@@ -223,7 +239,7 @@ class WSSessionManager(object):
 
         self.port = port
         self._send_queue = collections.deque()
-        self._message_handler = _MessageHandler(self.event_handlers)
+        self._message_handler = _MessageHandler(events, self.event_handlers)
 
         self._poll_signal = Event()
         self.messaging_thread = None
@@ -289,11 +305,6 @@ class WSSessionManager(object):
         self.messaging_thread.add_to_send_queue(json.dumps(data, sort_keys=True))
         self._poll_signal.set()
 
-    def _get_event(self):
-        self._check_messaging_thread()
-        self._poll_signal.set()
-        return self._message_handler.pop_event()
-
     def close(self):
         if hasattr(self, "messaging_thread") and self.messaging_thread:
             self.messaging_thread.stop()
@@ -304,22 +315,6 @@ class WSSessionManager(object):
                 time.sleep(0.1)
 
             self.messaging_thread.close()
-
-    def _append(self, message):
-        domain, event = message["method"].split(".")
-        if domain in self._events:
-            self._events[domain].append(message)
-
-    def _collect_events_from_message_handler(self):
-        """ Will only return once all the messages have been retrieved or the timeout is reached
-        """
-        timer = _Timer(self.timeout)
-        message = self._get_event()
-        while not timer.timed_out and message:
-            self._append(message)
-            message = self._get_event()
-        if timer.timed_out and message:
-            raise DevToolsTimeoutException("Timed out flushing messages after %ss" % timer.timeout)
 
     def get_new_result_id(self):
         with self._result_id_lock:
@@ -367,12 +362,12 @@ class WSSessionManager(object):
     def _add_domain(self, domain, params):
         if domain not in self._domains:
             self._domains[domain] = params
-            self._events[domain] = []
+            self._message_handler._events[domain] = []
 
     def _remove_domain(self, domain):
         if domain in self._domains:
             del self._domains[domain]
-            del self._events[domain]
+            del self._message_handler._events[domain]
 
     def is_domain_enabled(self, domain):
         return domain in self._domains
@@ -382,21 +377,12 @@ class WSSessionManager(object):
             raise DomainNotEnabledError(
                 'The domain "%s" is not enabled, try enabling it via the interface.' % domain
             )
-
-        self._collect_events_from_message_handler()
-
-        events = self._events[domain]
-        if clear:
-            self._events[domain] = []
-        else:
-            # This is to make the events immutable unless using clear
-            events = events[:]
-
-        return events
+        # We can be better here, just check if the thread is fine and grab whatever is buffered
+        self._check_messaging_thread()
+        self._poll_signal.set()
+        return self._message_handler.get_events(domain, clear)
 
     def reset(self):
-        for domain in self._events:
-            self._events[domain] = []
 
         self._next_result_id = 0
 

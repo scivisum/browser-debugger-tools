@@ -24,6 +24,10 @@ class EventHandler(object):
 
     @abstractmethod
     def handle(self, message):
+        """ Implement the method to handle the events relating to the event EventHandler
+            If the handle method needs to execute a method via the socket handler then it should
+            be done asynchronously since this method blocks the _WSMessagingThread.
+        """
         pass
 
 
