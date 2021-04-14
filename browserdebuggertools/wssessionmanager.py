@@ -16,22 +16,23 @@ from browserdebuggertools.eventhandlers import (
     EventHandler, PageLoadEventHandler, JavascriptDialogEventHandler
 )
 from browserdebuggertools.exceptions import (
-    DevToolsException, MessageNotFoundError, TabNotFoundError, MaxRetriesException,
+    DevToolsException, TabNotFoundError, MaxRetriesException,
     DevToolsTimeoutException, DomainNotEnabledError,
     MethodNotFoundError, UnknownError, ResourceNotFoundError, MessagingThreadIsDeadError,
     InvalidParametersError
 )
 
 
-class _WSMessagingThread(Thread):
-
+class _WSMessageProducer(Thread):
+    """ Puts messages from the websocket into the message queue
+    """
     _CONN_TIMEOUT = 15
     _BLOCKED_TIMEOUT = 5
     _MAX_QUEUE_BUFFER = 1000
     _POLL_INTERVAL = 1
 
     def __init__(self, port, send_queue, recv_queue, poll_signal):
-        super(_WSMessagingThread, self).__init__()
+        super(_WSMessageProducer, self).__init__()
         self._port = port
         self._send_queue = send_queue
         self._recv_queue = recv_queue
@@ -90,12 +91,6 @@ class _WSMessagingThread(Thread):
 
     def add_to_send_queue(self, payload):
         self._send_queue.append(payload)
-
-    def get_from_recv_queue(self):
-        if self._recv_queue:
-            return self._recv_queue.popleft()
-        else:
-            raise MessageNotFoundError()
 
     def stop(self):
         self._continue = False
@@ -182,44 +177,47 @@ class WSSessionManager(object):
         self._result_id_lock = Lock()
 
         self._last_not_ok = None
-        self._messaging_thread_not_ok_count = 0
+        self._message_producer_not_ok_count = 0
 
         self.port = port
         self._send_queue = collections.deque()
         self._recv_queue = collections.deque()
 
         self._poll_signal = Event()
-        self.messaging_thread = None
+        self._message_producer = None
+
+        self._message_consumer = None
         self._message_access_lock = Lock()
+        self._should_flush_messages = True
 
         self.setup_ws_session()
 
     def __del__(self):
         self.close()
 
-    def _check_messaging_thread(self):
+    def _check_message_producer(self):
 
-        if self.messaging_thread.is_alive():
-            if self.messaging_thread.blocked:
+        if self._message_producer.is_alive():
+            if self._message_producer.blocked:
                 logging.warning("WS messaging thread appears to be blocked")
                 self.close()
                 restart = True
             else:
                 restart = False
         else:
-            if isinstance(self.messaging_thread.exception,
+            if isinstance(self._message_producer.exception,
                           websocket.WebSocketConnectionClosedException):
                 restart = True
-            elif self.messaging_thread.exception:
-                raise self.messaging_thread.exception
+            elif self._message_producer.exception:
+                raise self._message_producer.exception
             else:
                 raise MessagingThreadIsDeadError("WS messaging thread died for an unknown reason")
 
         if restart:
-            self.increment_messaging_thread_not_ok()
+            self.increment_message_producer_not_ok()
             self.setup_ws_session()
 
-    def increment_messaging_thread_not_ok(self):
+    def increment_message_producer_not_ok(self):
 
         now = datetime.now()
 
@@ -227,12 +225,12 @@ class WSSessionManager(object):
             self._last_not_ok and
             (now - self._last_not_ok).seconds > self.RETRY_COUNT_TIMEOUT
         ):
-            self._messaging_thread_not_ok_count = 0
+            self._message_producer_not_ok_count = 0
 
         self._last_not_ok = now
-        self._messaging_thread_not_ok_count += 1
+        self._message_producer_not_ok_count += 1
 
-        if self._messaging_thread_not_ok_count > self.MAX_RETRY_THREADS:
+        if self._message_producer_not_ok_count > self.MAX_RETRY_THREADS:
             raise MaxRetriesException(
                 "WS messaging thread not ok %s times within %s seconds" % (
                     self.MAX_RETRY_THREADS, self.RETRY_COUNT_TIMEOUT
@@ -241,31 +239,36 @@ class WSSessionManager(object):
 
     def setup_ws_session(self):
 
-        self.messaging_thread = _WSMessagingThread(
+        self._message_producer = _WSMessageProducer(
             self.port, self._send_queue, self._recv_queue, self._poll_signal
         )
-        self.messaging_thread.start()
-        message_consumer = Thread(target=self._flush_messages)
-        message_consumer.start()
+        self._message_consumer = Thread(target=self._flush_messages)
+
+        self._message_producer.start()
+        self._message_consumer.start()
 
         for domain, params in self._domains.items():
             self.enable_domain(domain, params)
 
     def _send(self, data):
-        self._check_messaging_thread()
-        self.messaging_thread.add_to_send_queue(json.dumps(data, sort_keys=True))
+        self._check_message_producer()
+        self._message_producer.add_to_send_queue(json.dumps(data, sort_keys=True))
         self._poll_signal.set()
 
     def close(self):
-        if hasattr(self, "messaging_thread") and self.messaging_thread:
-            self.messaging_thread.stop()
+        if hasattr(self, "_message_consumer") and self._message_consumer:
+            self._should_flush_messages = False
+
+        if hasattr(self, "_message_producer") and self._message_producer:
+
+            self._message_producer.stop()
             timer = _Timer(5)
             while not timer.timed_out:
-                if not self.messaging_thread.is_alive():
+                if not self._message_producer.is_alive():
                     return
                 time.sleep(0.1)
 
-            self.messaging_thread.close()
+            self._message_producer.close()
 
     def _append(self, message):
 
@@ -285,17 +288,17 @@ class WSSessionManager(object):
             logging.warning("Unrecognised message: {}".format(message))
 
     def _flush_messages(self):
-        """ Processes messages forever only stopping to allow the events to be collected
+        """ Consumes messages from the message queue
         """
-        while True:
-            self._check_messaging_thread()
+        while self._should_flush_messages:
+            self._check_message_producer()
             self._poll_signal.set()
-            try:
+            if self._recv_queue:
                 with self._message_access_lock:
-                    message = self.messaging_thread.get_from_recv_queue()
+                    message = self._recv_queue.popleft()
                     message = json.loads(message)
                     self._append(message)
-            except MessageNotFoundError:
+            else:
                 time.sleep(0.1)
 
     def _execute(self, domain_name, method_name, params=None):
