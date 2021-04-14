@@ -16,7 +16,7 @@ from browserdebuggertools.eventhandlers import (
     EventHandler, PageLoadEventHandler, JavascriptDialogEventHandler
 )
 from browserdebuggertools.exceptions import (
-    DevToolsException, ResultNotFoundError, TabNotFoundError, MaxRetriesException,
+    DevToolsException, MessageNotFoundError, TabNotFoundError, MaxRetriesException,
     DevToolsTimeoutException, DomainNotEnabledError,
     MethodNotFoundError, UnknownError, ResourceNotFoundError, MessagingThreadIsDeadError,
     InvalidParametersError
@@ -94,6 +94,8 @@ class _WSMessagingThread(Thread):
     def get_from_recv_queue(self):
         if self._recv_queue:
             return self._recv_queue.popleft()
+        else:
+            raise MessageNotFoundError()
 
     def stop(self):
         self._continue = False
@@ -192,6 +194,8 @@ class WSSessionManager(object):
 
         self._poll_signal = Event()
         self.messaging_thread = None
+        self._message_access_lock = Lock()
+
         self.setup_ws_session()
 
     def __del__(self):
@@ -245,6 +249,8 @@ class WSSessionManager(object):
             self.port, self._send_queue, self._recv_queue, self._poll_signal
         )
         self.messaging_thread.start()
+        message_consumer = Thread(target=self._flush_messages)
+        message_consumer.start()
 
         for domain, params in self._domains.items():
             self.enable_domain(domain, params)
@@ -253,14 +259,6 @@ class WSSessionManager(object):
         self._check_messaging_thread()
         self.messaging_thread.add_to_send_queue(json.dumps(data, sort_keys=True))
         self._poll_signal.set()
-
-    def _recv(self):
-        self._check_messaging_thread()
-        self._poll_signal.set()
-        message = self.messaging_thread.get_from_recv_queue()
-        if message:
-            message = json.loads(message)
-        return message
 
     def close(self):
         if hasattr(self, "messaging_thread") and self.messaging_thread:
@@ -291,24 +289,18 @@ class WSSessionManager(object):
             logging.warning("Unrecognised message: {}".format(message))
 
     def _flush_messages(self):
-        """ Will only return once all the messages have been retrieved or the timeout is reached
+        """ Processes messages forever only stopping to allow the events to be collected
         """
-        timer = _Timer(self.timeout)
-        message = self._recv()
-        while not timer.timed_out and message:
-            self._append(message)
-            message = self._recv()
-        if timer.timed_out and message:
-            raise DevToolsTimeoutException("Timed out flushing messages after %ss" % timer.timeout)
-
-    def _find_next_result(self, result_id):
-        if result_id not in self._results:
-            self._flush_messages()
-
-        if result_id not in self._results:
-            raise ResultNotFoundError("Result not found for id: {} .".format(result_id))
-
-        return self._results.pop(result_id)
+        while True:
+            self._check_messaging_thread()
+            self._poll_signal.set()
+            try:
+                with self._message_access_lock:
+                    message = self.messaging_thread.get_from_recv_queue()
+                    message = json.loads(message)
+                    self._append(message)
+            except MessageNotFoundError:
+                time.sleep(0.1)
 
     def _execute(self, domain_name, method_name, params=None):
 
@@ -348,55 +340,58 @@ class WSSessionManager(object):
         # this: https://github.com/scivisum/browser-debugger-tools/pull/20/
         return result_id
 
+    def is_domain_enabled(self, domain):
+        return domain in self._domains
+
     def _add_domain(self, domain, params):
-        if domain not in self._domains:
+        if not self.is_domain_enabled(domain):
             self._domains[domain] = params
             self._events[domain] = []
 
     def _remove_domain(self, domain):
-        if domain in self._domains:
+        if self.is_domain_enabled(domain):
             del self._domains[domain]
             del self._events[domain]
 
     def get_events(self, domain, clear=False):
-        if domain not in self._domains:
+        if not self.is_domain_enabled(domain):
             raise DomainNotEnabledError(
                 'The domain "%s" is not enabled, try enabling it via the interface.' % domain
             )
 
-        self._flush_messages()
-
-        events = self._events[domain]
-        if clear:
-            self._events[domain] = []
-        else:
-            # This is to make the events immutable unless using clear
-            events = events[:]
+        with self._message_access_lock:
+            events = self._events[domain]
+            if clear:
+                self._events[domain] = []
+            else:
+                # This is to make the events immutable unless using clear
+                events = events[:]
 
         return events
 
     def reset(self):
-        for domain in self._events:
-            self._events[domain] = []
+        with self._message_access_lock:
+            for domain in self._events:
+                self._events[domain] = []
 
-        self._results = {}
-        self._next_result_id = 0
+            self._results = {}
+            self._next_result_id = 0
 
-        self._send_queue.clear()
-        self._recv_queue.clear()
+            self._send_queue.clear()
+            self._recv_queue.clear()
 
     def _wait_for_result(self, result_id):
         """ Waits for a result to complete within the timeout duration then returns it.
             Raises a DevToolsTimeoutException if it cannot find the result.
 
         :return: The result.
-          """
+        """
         timer = _Timer(self.timeout)
         while not timer.timed_out:
-            try:
-                return self._find_next_result(result_id)
-            except ResultNotFoundError:
-                time.sleep(0.01)
+            if result_id in self._results:
+                return self._results.pop(result_id)
+
+            time.sleep(0.01)
         raise DevToolsTimeoutException(
             "Reached timeout limit of {}, waiting for a response message".format(self.timeout)
         )

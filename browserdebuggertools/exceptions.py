@@ -26,7 +26,7 @@ class MethodNotFoundError(ProtocolError, NotFoundError):
     pass
 
 
-class ResultNotFoundError(NotFoundError):
+class MessageNotFoundError(NotFoundError):
     pass
 
 
