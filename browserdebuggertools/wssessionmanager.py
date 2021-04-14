@@ -173,15 +173,11 @@ class WSSessionManager(object):
             "JavascriptDialog": JavascriptDialogEventHandler(self),
         }  # type: Dict[str, EventHandler]
 
-        self._internal_events = {
-            "Page": {
-                "domContentEventFired": self.event_handlers["PageLoad"],
-                "navigatedWithinDocument": self.event_handlers["PageLoad"],
-                "frameNavigated": self.event_handlers["PageLoad"],
-                "javascriptDialogOpening": self.event_handlers["JavascriptDialog"],
-                "javascriptDialogClosed": self.event_handlers["JavascriptDialog"],
-            }
-        }  # type: Dict[str, Dict[str, EventHandler]]
+        self._internal_events = {}  # type: Dict[str, EventHandler]
+        for handler in self.event_handlers.values():
+            for event in handler.supported_events:
+                self._internal_events[event] = handler
+
         self._next_result_id = 0
         self._result_id_lock = Lock()
 
@@ -279,10 +275,10 @@ class WSSessionManager(object):
             result_id = message.pop("id")
             self._results[result_id] = message
         elif "method" in message:
-            domain, event = message["method"].split(".")
-            if domain in self._internal_events:
-                if event in self._internal_events[domain]:
-                    self._internal_events[domain][event].handle(message)
+            method = message["method"]
+            if method in self._internal_events:
+                self._internal_events[method].handle(message)
+            domain, event = method.split(".")
             if domain in self._events:
                 self._events[domain].append(message)
         else:

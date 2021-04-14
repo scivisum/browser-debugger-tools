@@ -3,7 +3,7 @@ from abc import ABCMeta, abstractmethod
 from typing import Optional
 
 from browserdebuggertools.exceptions import (
-    JavascriptDialogNotFoundError, DevToolsException
+    JavascriptDialogNotFoundError
 )
 from browserdebuggertools.models import JavascriptDialog
 
@@ -14,20 +14,31 @@ logging.basicConfig(format='%(levelname)s:%(message)s')
 class EventHandler(object):
 
     __metaclass__ = ABCMeta
+    supported_events = []
 
     def __init__(self, socket_handler):
         # type: (SocketHandler) -> None
         self._socket_handler = socket_handler
 
-    def raise_unexpected_event_error(self, method):
-        raise DevToolsException("{} doesn't accept this event '{}'".format(self.__class__, method))
-
     @abstractmethod
     def handle(self, message):
+        """ Implement the method to handle the events relating to the event EventHandler
+            If the handle method needs to execute a method via the socket handler then it should
+            be done asynchronously since this method blocks the _WSMessagingThread.
+
+            We have no use for executing a devtools command in the handle method
+            but when we do the TODO in execute_async needs to be resolved
+        """
         pass
 
 
 class PageLoadEventHandler(EventHandler):
+
+    supported_events = [
+        "Page.domContentEventFired",
+        "Page.navigatedWithinDocument",
+        "Page.frameNavigated",
+    ]
 
     def __init__(self, socket_handler):
         super(PageLoadEventHandler, self).__init__(socket_handler)
@@ -44,8 +55,6 @@ class PageLoadEventHandler(EventHandler):
         elif message.get("method") == "Page.frameNavigated":
             logging.info("Detected Frame Navigation")
             self._reset()
-        else:
-            self.raise_unexpected_event_error(message["method"])
 
     def _reset(self):
         self._url = None
@@ -72,6 +81,11 @@ class PageLoadEventHandler(EventHandler):
 
 class JavascriptDialogEventHandler(EventHandler):
 
+    supported_events = [
+        "Page.javascriptDialogOpening",
+        "Page.javascriptDialogClosed",
+    ]
+
     def __init__(self, socket_handler):
         super(JavascriptDialogEventHandler, self).__init__(socket_handler)
         self._dialog = None  # type: Optional[JavascriptDialog]
@@ -84,9 +98,6 @@ class JavascriptDialogEventHandler(EventHandler):
         elif message["method"] == "Page.javascriptDialogClosed":
             logging.info("Detected javascript dialog closed")
             self._dialog.is_handled = True
-
-        else:
-            self.raise_unexpected_event_error(message["method"])
 
     def get_opened_javascript_dialog(self):
         """
