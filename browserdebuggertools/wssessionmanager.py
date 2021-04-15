@@ -4,7 +4,6 @@ import logging
 import socket
 import time
 import collections
-from datetime import datetime
 from threading import Thread, Event, Lock
 
 from typing import Dict
@@ -19,26 +18,53 @@ from browserdebuggertools.exceptions import (
     DevToolsException, TabNotFoundError, MaxRetriesException,
     DevToolsTimeoutException, DomainNotEnabledError,
     MethodNotFoundError, UnknownError, ResourceNotFoundError, MessagingThreadIsDeadError,
-    InvalidParametersError
+    InvalidParametersError, WebSocketBlockedException
 )
 
 
+class NotifiableDeque(collections.deque):
+    """ A Queue with the benefits of deque speed
+        It also allows us to have a max size.
+        It can wait until there are new messages or the timeout is met
+    """
+    _POLL_INTERVAL = 1
+    _MAX_QUEUE_BUFFER = 1000
+
+    def __init__(self, event=Event()):
+        super(NotifiableDeque, self).__init__()
+        self._poll_signal = event
+
+    def append(self, message):
+        """ Appends to the queue and allows any waiting threads to start popping from it
+        """
+        super(NotifiableDeque, self).append(message)
+        self._poll_signal.set()
+
+    def wait_for_messages(self):
+        """ Waits until there are messages or the poll interval time
+        """
+        self._poll_signal.wait(self._POLL_INTERVAL)
+        if self._poll_signal.is_set():
+            self._poll_signal.clear()
+
+    def is_full(self):
+        return len(self) >= self._MAX_QUEUE_BUFFER
+
+
 class _WSMessageProducer(Thread):
-    """ Puts messages from the websocket into the message queue
+    """ Interfaces with the websocket to send messages from the send queue
+        or put messages from the websocket into recv queue
     """
     _CONN_TIMEOUT = 15
     _BLOCKED_TIMEOUT = 5
-    _MAX_QUEUE_BUFFER = 1000
-    _POLL_INTERVAL = 1
 
-    def __init__(self, port, send_queue, recv_queue, poll_signal):
+    def __init__(self, port, send_queue, recv_queue):
         super(_WSMessageProducer, self).__init__()
         self._port = port
         self._send_queue = send_queue
         self._recv_queue = recv_queue
         self._last_poll = None
         self._continue = True
-        self._poll_signal = poll_signal
 
         self.exception = None
         self.ws = self._get_websocket()
@@ -89,8 +115,26 @@ class _WSMessageProducer(Thread):
             except websocket.WebSocketConnectionClosedException:
                 pass
 
-    def add_to_send_queue(self, payload):
-        self._send_queue.append(payload)
+    def empty_send_queue(self):
+        while self._send_queue:
+            message = self._send_queue.popleft()
+            try:
+                self.ws.send(message)
+            except Exception:
+                # Add the message to the beginning of the queue again
+                self._send_queue.append_left(message)
+                raise
+
+    def empty_recv_queue(self):
+        while not self._recv_queue.is_full():
+            try:
+                message = self.ws.recv()
+                self._recv_queue.append(message)
+            except socket.error as e:
+                # We expect [Errno 11] when there are no more messages to read
+                if "[Errno 11] Resource temporarily unavailable" not in str(e):
+                    raise
+                break
 
     def stop(self):
         self._continue = False
@@ -102,32 +146,45 @@ class _WSMessageProducer(Thread):
             self._last_poll = time.time()
             while self._continue:
 
-                while self._send_queue:
-                    message = self._send_queue[0]
-                    self.ws.send(message)
-                    self._send_queue.popleft()  # Don't pop first, in-case send excepts
+                self.empty_send_queue()
+                self.empty_recv_queue()
 
-                while len(self._recv_queue) < self._MAX_QUEUE_BUFFER:
-                    try:
-                        message = self.ws.recv()
-                        self._recv_queue.append(message)
-                    except socket.error as e:
-                        # We expect [Errno 11] when there are no more messages to read
-                        if "[Errno 11] Resource temporarily unavailable" not in str(e):
-                            raise
-                        break
-
-                self._poll_signal.wait(self._POLL_INTERVAL)
-                if self._poll_signal.isSet():
-                    self._poll_signal.clear()
-
+                self._send_queue.wait_for_messages()
                 self._last_poll = time.time()
 
     @property
     def blocked(self):
+        """ Returns True if:
+                the websocket hangs https://github.com/websocket-client/websocket-client/issues/437
+                or we've been consuming messages from the websocket for too long **
+
+            Although taking too long to receive messages from the websocket doesn't technically mean
+            we're blocked it means we can't send any messages to that websocket either,
+            some messages could allow us to reduce the load on the websocket
+            so raising an exception in this case allows us to empty the send queue and try again.
+
+            **  This could be solved by having a separate thread to handle sending messages,
+                assuming ws.send() doesn't hang and is also thread safe.
+                Then we could update self._last_poll after every successful ws.send()/ws.recv()
+        """
         return (
             self._last_poll and ((time.time() - self._last_poll) > self._BLOCKED_TIMEOUT)
         )
+
+    def health_check(self):
+        """ Checks if the message_producer hasn't crashed
+            and that we still have a connection to the websocket.
+        """
+        if self.is_alive():
+            if self.blocked:
+                logging.warning("WS messaging thread appears to be blocked")
+                self.close()
+                raise WebSocketBlockedException()
+        else:
+            if self.exception:
+                raise self.exception
+            else:
+                raise MessagingThreadIsDeadError("WS messaging thread died for an unknown reason")
 
 
 class _Timer(object):
@@ -180,14 +237,17 @@ class WSSessionManager(object):
         self._message_producer_not_ok_count = 0
 
         self.port = port
-        self._send_queue = collections.deque()
-        self._recv_queue = collections.deque()
+        # Use the same event since the _WSMessageProducer thread accesses both queues
+        # Normally you'd have a thread processing each queue but the benefits of that aren't high
+        # since the send queue is not likely to block the recv queue (but the opposite is possible)
+        poll_signal = Event()
+        self._send_queue = NotifiableDeque(poll_signal)
+        self._recv_queue = NotifiableDeque(poll_signal)
 
-        self._poll_signal = Event()
         self._message_producer = None
 
-        self._message_consumer = None
-        self._message_access_lock = Lock()
+        self._message_consumer = Thread(target=self._flush_messages)
+        self._events_access_lock = Lock()
         self._should_flush_messages = True
 
         self.setup_ws_session()
@@ -196,35 +256,19 @@ class WSSessionManager(object):
         self.close()
 
     def _check_message_producer(self):
-
-        if self._message_producer.is_alive():
-            if self._message_producer.blocked:
-                logging.warning("WS messaging thread appears to be blocked")
-                self.close()
-                restart = True
-            else:
-                restart = False
-        else:
-            if isinstance(self._message_producer.exception,
-                          websocket.WebSocketConnectionClosedException):
-                restart = True
-            elif self._message_producer.exception:
-                raise self._message_producer.exception
-            else:
-                raise MessagingThreadIsDeadError("WS messaging thread died for an unknown reason")
-
-        if restart:
+        """ Checks if the websocket is healthy and recreates the connection if not
+            Any other failure gets raised since we cant recover from it
+        """
+        try:
+            self._message_producer.health_check()
+        except (websocket.WebSocketConnectionClosedException, WebSocketBlockedException) as e:
             self.increment_message_producer_not_ok()
             self.setup_ws_session()
 
     def increment_message_producer_not_ok(self):
+        now = time.time()
 
-        now = datetime.now()
-
-        if (
-            self._last_not_ok and
-            (now - self._last_not_ok).seconds > self.RETRY_COUNT_TIMEOUT
-        ):
+        if self._last_not_ok and (now - self._last_not_ok) > self.RETRY_COUNT_TIMEOUT:
             self._message_producer_not_ok_count = 0
 
         self._last_not_ok = now
@@ -239,25 +283,22 @@ class WSSessionManager(object):
 
     def setup_ws_session(self):
 
-        self._message_producer = _WSMessageProducer(
-            self.port, self._send_queue, self._recv_queue, self._poll_signal
-        )
-        self._message_consumer = Thread(target=self._flush_messages)
-
+        self._message_producer = _WSMessageProducer(self.port, self._send_queue, self._recv_queue)
         self._message_producer.start()
-        self._message_consumer.start()
+
+        if not self._message_consumer.is_alive():
+            # The message consumer needs to be started or we cannot enable the domains
+            self._message_consumer.start()
 
         for domain, params in self._domains.items():
             self.enable_domain(domain, params)
 
     def _send(self, data):
+        self._send_queue.append(json.dumps(data, sort_keys=True))
         self._check_message_producer()
-        self._message_producer.add_to_send_queue(json.dumps(data, sort_keys=True))
-        self._poll_signal.set()
 
     def close(self):
-        if hasattr(self, "_message_consumer") and self._message_consumer:
-            self._should_flush_messages = False
+        self._should_flush_messages = False
 
         if hasattr(self, "_message_producer") and self._message_producer:
 
@@ -283,7 +324,8 @@ class WSSessionManager(object):
                 self._internal_events[method].handle(message)
             domain, event = method.split(".")
             if domain in self._events:
-                self._events[domain].append(message)
+                with self._events_access_lock:
+                    self._events[domain].append(message)
         else:
             logging.warning("Unrecognised message: {}".format(message))
 
@@ -291,15 +333,13 @@ class WSSessionManager(object):
         """ Consumes messages from the message queue
         """
         while self._should_flush_messages:
+            while self._recv_queue:
+                message = self._recv_queue.popleft()
+                message = json.loads(message)
+                self._append(message)
+
             self._check_message_producer()
-            self._poll_signal.set()
-            if self._recv_queue:
-                with self._message_access_lock:
-                    message = self._recv_queue.popleft()
-                    message = json.loads(message)
-                    self._append(message)
-            else:
-                time.sleep(0.1)
+            self._recv_queue.wait_for_messages()
 
     def _execute(self, domain_name, method_name, params=None):
 
@@ -358,7 +398,7 @@ class WSSessionManager(object):
                 'The domain "%s" is not enabled, try enabling it via the interface.' % domain
             )
 
-        with self._message_access_lock:
+        with self._events_access_lock:
             events = self._events[domain]
             if clear:
                 self._events[domain] = []
@@ -369,7 +409,7 @@ class WSSessionManager(object):
         return events
 
     def reset(self):
-        with self._message_access_lock:
+        with self._events_access_lock:
             for domain in self._events:
                 self._events[domain] = []
 

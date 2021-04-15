@@ -1,3 +1,6 @@
+from websocket import WebSocketException
+
+
 class DevToolsException(Exception):
     pass
 
@@ -47,4 +50,8 @@ class MessagingThreadIsDeadError(DevToolsException):
 
 
 class InvalidParametersError(ProtocolError):
+    pass
+
+
+class WebSocketBlockedException(WebSocketException, DevToolsException):
     pass
