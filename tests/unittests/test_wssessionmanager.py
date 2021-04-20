@@ -1,36 +1,49 @@
-import collections
 import copy
+import socket
+from threading import Event
 from unittest import TestCase
 
-from mock import patch, MagicMock, call
+from mock import patch, MagicMock, call, PropertyMock
 from websocket import WebSocketConnectionClosedException
 
 from browserdebuggertools.exceptions import (
-    DevToolsException, ResultNotFoundError, TabNotFoundError,
+    DevToolsException, TabNotFoundError,
     DomainNotEnabledError, DevToolsTimeoutException, MethodNotFoundError,
-    InvalidParametersError)
-from browserdebuggertools.wssessionmanager import WSSessionManager, _WSMessagingThread
+    InvalidParametersError, WebSocketBlockedException, MessagingThreadIsDeadError,
+    MaxRetriesException
+)
+from browserdebuggertools.wssessionmanager import (
+    WSSessionManager, _WSMessageProducer, NotifiableDeque
+)
 
 MODULE_PATH = "browserdebuggertools.wssessionmanager."
 
 
-class MessagingThreadTest(TestCase):
+class MockException(Exception):
+    pass
 
-    class _NoInitMessagingThread(_WSMessagingThread):
 
-        def __init__(self):
-            pass
+class WSMessageProducerTest(TestCase):
+
+    class MockWSMessageProducer(_WSMessageProducer):
+
+        def _get_websocket(self):
+            return MagicMock()
 
     def setUp(self):
-        self.messaging_thread = self._NoInitMessagingThread()
+        event = Event()
+        self.recv_queue = NotifiableDeque(event)
+        self.send_queue = NotifiableDeque(event)
+        self.messaging_thread = self.MockWSMessageProducer(1111, self.send_queue, self.recv_queue)
+        self.ws_message_producer = self.messaging_thread
 
 
 class SessionManagerTest(TestCase):
 
     class _NoWSSessionManager(WSSessionManager):
 
-        def setup_ws_session(self):
-            pass
+        def _setup_ws_session(self):
+            self._message_producer = MagicMock(is_alive=MagicMock(return_value=False))
 
     def setUp(self):
         self.session_manager = self._NoWSSessionManager(1234, 30)
@@ -38,7 +51,7 @@ class SessionManagerTest(TestCase):
 
 @patch(MODULE_PATH + "requests")
 @patch(MODULE_PATH + "websocket", MagicMock())
-class Test__WSMessagingThread__get_websocket_url(MessagingThreadTest):
+class Test___WSMessageProducer__get_websocket_url(WSMessageProducerTest):
 
     def test(self, requests):
         mock_websocket_url = "ws://localhost:1234/devtools/page/test"
@@ -67,36 +80,142 @@ class Test__WSMessagingThread__get_websocket_url(MessagingThreadTest):
             self.messaging_thread._get_websocket_url(1234)
 
 
-class Test__WSMessagingThread_run(MessagingThreadTest):
+class Test__WSMessageProducer__empty_send_queue(WSMessageProducerTest):
 
     def test(self):
+        message1, message2, message3 = MagicMock(), MagicMock(), MagicMock()
+        self.ws_message_producer._send_queue.append(message1)
+        self.ws_message_producer._send_queue.append(message2)
+        self.ws_message_producer._send_queue.append(message3)
 
-        self.messaging_thread._send_queue = collections.deque()
-        self.messaging_thread._recv_queue = collections.deque()
-        self.messaging_thread._continue = True
-        self.messaging_thread._MAX_QUEUE_BUFFER = 2
+        self.ws_message_producer._empty_send_queue()
 
-        self.messaging_thread.add_to_send_queue("test1")
-        self.messaging_thread.add_to_send_queue("test2")
+        self.assertListEqual([
+            call.send(message1),
+            call.send(message2),
+            call.send(message3)
+        ], self.ws_message_producer.ws.mock_calls)
+        self.assertFalse(self.ws_message_producer._send_queue)
 
-        self.messaging_thread.ws = MagicMock()
-        self.messaging_thread.ws.send = MagicMock()
-        self.messaging_thread.close = MagicMock()
-        self.messaging_thread.ws.recv = MagicMock(side_effect=["test3", "test4"])
+    def test_fail(self):
+        message1, message2, message3 = MagicMock(), MagicMock(), MagicMock()
+        self.ws_message_producer._send_queue.append(message1)
+        self.ws_message_producer._send_queue.append(message2)
+        self.ws_message_producer._send_queue.append(message3)
+        self.ws_message_producer.ws.send.side_effect = [None, MockException(), None]
 
-        def _clear():
-            self.messaging_thread._continue = False
-        self.messaging_thread._poll_signal = MagicMock(clear=_clear)
+        with self.assertRaises(MockException):
+            self.ws_message_producer._empty_send_queue()
 
-        self.messaging_thread.run()
+        self.assertListEqual([
+            call.send(message1),
+            call.send(message2),
+        ], self.ws_message_producer.ws.mock_calls)
+        self.assertListEqual([
+            message2,
+            message3,
+        ], list(self.ws_message_producer._send_queue))
 
-        self.messaging_thread.ws.send.assert_has_calls([call("test1"), call("test2")])
-        self.assertEqual("test3", self.messaging_thread.get_from_recv_queue())
-        self.assertEqual("test4", self.messaging_thread.get_from_recv_queue())
-        self.messaging_thread.close.assert_called_once_with()
+
+class Test__WSMessageProducer__empty_websocket(WSMessageProducerTest):
+
+    def test(self):
+        message1, message2, message3 = MagicMock(), MagicMock(), MagicMock()
+        self.ws_message_producer.ws.recv.side_effect = [
+            message1, message2, message3,
+            socket.error("[Errno 11] Resource temporarily unavailable"),
+        ]
+
+        self.ws_message_producer._empty_websocket()
+
+        self.assertListEqual([
+            message1,
+            message2,
+            message3,
+        ], list(self.ws_message_producer._recv_queue))
+
+    def test_full(self):
+        message1, message2, message3, message4 = MagicMock(), MagicMock(), MagicMock(), MagicMock()
+        self.ws_message_producer.ws.recv.side_effect = [
+            message1, message2, message3, message4
+        ]
+        self.ws_message_producer._recv_queue._MAX_QUEUE_BUFFER = 3
+
+        self.ws_message_producer._empty_websocket()
+
+        self.assertListEqual([
+            message1,
+            message2,
+            message3,
+        ], list(self.ws_message_producer._recv_queue))
+
+    def test_other_socket_error(self):
+        message1, message2, message3 = MagicMock(), MagicMock(), MagicMock()
+        self.ws_message_producer.ws.recv.side_effect = [
+            message1, message2, socket.error(), message3
+        ]
+
+        with self.assertRaises(socket.error):
+            self.ws_message_producer._empty_websocket()
+
+        self.assertListEqual([
+            message1,
+            message2,
+        ], list(self.ws_message_producer._recv_queue))
+
+    def test_fail(self):
+        message1, message2, message3 = MagicMock(), MagicMock(), MagicMock()
+        self.ws_message_producer.ws.recv.side_effect = [
+            message1, message2, MockException(), message3
+        ]
+
+        with self.assertRaises(MockException):
+            self.ws_message_producer._empty_websocket()
+
+        self.assertListEqual([
+            message1,
+            message2,
+        ], list(self.ws_message_producer._recv_queue))
 
 
-class Test__WSMessagingThread_blocked(MessagingThreadTest):
+@patch(MODULE_PATH + "time")
+@patch(MODULE_PATH + "_WSMessageProducer._empty_send_queue", MagicMock())
+@patch(MODULE_PATH + "_WSMessageProducer._empty_websocket", MagicMock())
+class Test__WSMessageProducer_run(WSMessageProducerTest):
+
+    def prepare(self, time):
+        NotifiableDeque._POLL_INTERVAL = 0
+        self.next_time = 0
+
+        def increment_time():
+            current_time = self.next_time
+            self.next_time += 1
+            if current_time == 10:
+                self.ws_message_producer.stop()
+
+            return current_time
+
+        time.time = increment_time
+
+    def test(self, time):
+        self.prepare(time)
+
+        self.ws_message_producer.run()
+
+        self.assertEqual(10, self.ws_message_producer._last_poll)
+
+    def test_exception(self, time):
+        exception = Exception()
+        self.ws_message_producer._empty_send_queue.side_effect = exception
+        self.prepare(time)
+
+        self.ws_message_producer.run()
+
+        self.assertEqual(0, self.ws_message_producer._last_poll)
+        self.assertEqual(exception, self.ws_message_producer.exception)
+
+
+class Test__WSMessagingThread_blocked(WSMessageProducerTest):
 
     def test_thread_not_started(self):
 
@@ -123,6 +242,42 @@ class Test__WSMessagingThread_blocked(MessagingThreadTest):
         self.messaging_thread._last_poll = now - self.messaging_thread._BLOCKED_TIMEOUT + 1
 
         self.assertFalse(self.messaging_thread.blocked)
+
+
+@patch(MODULE_PATH + "_WSMessageProducer.is_alive", MagicMock())
+class Test__WSMessageProducer_health_check(WSMessageProducerTest):
+
+    @patch(MODULE_PATH + "_WSMessageProducer.blocked", new_callable=PropertyMock)
+    def test_fine(self, blocked):
+        self.ws_message_producer.is_alive.return_value = True
+        blocked.return_value = False
+
+        self.ws_message_producer.health_check()
+
+    @patch(MODULE_PATH + "_WSMessageProducer.close", MagicMock())
+    @patch(MODULE_PATH + "_WSMessageProducer.blocked", new_callable=PropertyMock)
+    def test_blocked(self, blocked):
+        self.ws_message_producer.is_alive.return_value = True
+        blocked.return_value = True
+
+        with self.assertRaises(WebSocketBlockedException):
+            self.ws_message_producer.health_check()
+
+        self.ws_message_producer.close.assert_called_once_with()
+
+    def test_stopped_with_exception(self):
+        self.ws_message_producer.is_alive.return_value = False
+        self.ws_message_producer.exception = MockException()
+
+        with self.assertRaises(MockException):
+            self.ws_message_producer.health_check()
+
+    def test_stopped_no_exception(self):
+        self.ws_message_producer.is_alive.return_value = False
+        self.ws_message_producer.exception = None
+
+        with self.assertRaises(MessagingThreadIsDeadError):
+            self.ws_message_producer.health_check()
 
 
 class Test_WSSessionManager__append(SessionManagerTest):
@@ -158,7 +313,7 @@ class Test_WSSessionManager__append(SessionManagerTest):
         self.session_manager.event_handlers = {
             "MockEvent": mock_event_handler
         }
-        self.session_manager._internal_events = {"MockDomain": {"mockMethod": mock_event_handler}}
+        self.session_manager._internal_events = {"MockDomain.mockMethod": mock_event_handler}
         mock_event = {"method": "MockDomain.mockMethod", "params": MagicMock}
 
         self.session_manager._append(mock_event)
@@ -169,44 +324,52 @@ class Test_WSSessionManager__append(SessionManagerTest):
 
 class Test_WSSessionManager_flush_messages(SessionManagerTest):
 
+    def setUp(self):
+        super(Test_WSSessionManager_flush_messages, self).setUp()
+        self.session_manager._message_producer = MagicMock()
+        self.session_manager._recv_queue = NotifiableDeque()
+
+        def _check_message_producer():
+            self.session_manager._should_flush_messages = False
+        self.session_manager._check_message_producer = _check_message_producer
+
     def test_get_results(self):
-        mock_result = {"key": "value"}
-        mock_message = {"id": 1, "result": mock_result}
-        self.session_manager._recv = MagicMock(side_effect=[mock_message, None])
+        self.session_manager._recv_queue.append('{"id": 1, "result": {"key": "value"}}')
 
         self.session_manager._flush_messages()
 
-        self.assertEqual(mock_result, self.session_manager._results[1])
+        self.assertEqual({"key": "value"}, self.session_manager._results[1])
 
     def test_get_errors(self):
-        mock_message = {"id": 1, "error": {"key": "value"}}
-        self.session_manager._recv = MagicMock(side_effect=[mock_message, None])
+        self.session_manager._recv_queue.append('{"id": 1, "error": {"key": "value"}}')
 
         self.session_manager._flush_messages()
 
         self.assertEqual({"error": {"key": "value"}}, self.session_manager._results[1])
 
     def test_get_events(self):
-        mock_message = {"method": "MockDomain.mockEvent", "params": {"key": "value"}}
+        self.session_manager._recv_queue.append(
+            '{"method": "MockDomain.mockEvent", "params": {"key": "value"}}'
+        )
         self.session_manager._events["MockDomain"] = []
-        self.session_manager._recv = MagicMock(side_effect=[mock_message, None])
 
         self.session_manager._flush_messages()
 
-        self.assertIn(mock_message, self.session_manager._events["MockDomain"])
+        self.assertIn(
+            {"method": "MockDomain.mockEvent", "params": {"key": "value"}},
+            self.session_manager._events["MockDomain"]
+        )
 
     def test_get_mixed(self):
         mock_result = {"key": "value"}
         mock_error = {"error": {"key": "value"}}
         mock_event = {"method": "MockDomain.mockEvent", "params": {"key": "value"}}
-        mock_result_message = {"id": 1, "result": {"key": "value"}}
-        mock_error_message = {"id": 2, "error": {"key": "value"}}
-        mock_event_message = {"method": "MockDomain.mockEvent", "params": {"key": "value"}}
-
+        self.session_manager._recv_queue.append('{"id": 1, "result": {"key": "value"}}')
+        self.session_manager._recv_queue.append('{"id": 2, "error": {"key": "value"}}')
+        self.session_manager._recv_queue.append(
+            '{"method": "MockDomain.mockEvent", "params": {"key": "value"}}'
+        )
         self.session_manager._events["MockDomain"] = []
-        self.session_manager._recv = MagicMock(side_effect=[
-            mock_result_message, mock_error_message, mock_event_message, None
-        ])
 
         self.session_manager._flush_messages()
 
@@ -214,45 +377,12 @@ class Test_WSSessionManager_flush_messages(SessionManagerTest):
         self.assertEqual(mock_error, self.session_manager._results[2])
         self.assertIn(mock_event, self.session_manager._events["MockDomain"])
 
-    def test_timed_out(self):
+    def test_exception(self):
+        self.session_manager._check_message_producer = MagicMock(side_effect=MockException())
 
-        self.session_manager._recv = MagicMock()
+        self.session_manager._flush_messages()
 
-        with patch("browserdebuggertools.wssessionmanager._Timer", new=MagicMock(timed_out=True)):
-            with self.assertRaises(DevToolsTimeoutException):
-                self.session_manager._flush_messages()
-
-
-@patch(MODULE_PATH + "WSSessionManager._flush_messages", MagicMock())
-class Test_WSSessionManager_find_next_result(SessionManagerTest):
-
-    def test_find_cached_result(self):
-        mock_result = {"result": "correct result"}
-
-        self.session_manager._next_result_id = 42
-        self.session_manager._results[42] = mock_result
-        result = self.session_manager._find_next_result()
-
-        self.assertEqual(mock_result, result)
-
-    def test_find_uncached_result(self):
-
-        mock_result = {"result": "correct result"}
-        self.session_manager._results = {}
-        self.session_manager._next_result_id = 42
-
-        def mock_flush_messages():
-            self.session_manager._results[42] = mock_result
-
-        self.session_manager._flush_messages = mock_flush_messages
-
-        result = self.session_manager._find_next_result()
-        self.assertEqual(mock_result, result)
-
-    def test_no_result(self):
-
-        with self.assertRaises(ResultNotFoundError):
-            self.session_manager._find_next_result()
+        self.assertIsInstance(self.session_manager._exception, MockException)
 
 
 @patch(MODULE_PATH + "websocket.send", MagicMock())
@@ -270,9 +400,9 @@ class Test_WSSessionManager_execute(SessionManagerTest):
         self.session_manager.execute(domain, method, None)
 
         self.assertEqual(4, self.session_manager._next_result_id)
-        self.session_manager._wait_for_result.assert_called_once_with()
+        self.session_manager._wait_for_result.assert_called_once_with(4)
         self.session_manager._send.assert_called_once_with({
-            "method": "%s.%s" % (domain, method), "params": {}
+            "id": 4, "method": "%s.%s" % (domain, method), "params": {}
         })
 
     @patch(MODULE_PATH + "WSSessionManager._execute", new=MagicMock())
@@ -347,7 +477,6 @@ class Test_WSSessionManager_get_events(SessionManagerTest):
 
         events = self.session_manager.get_events(self.domain)
 
-        _flush_messages.assert_called_once_with()
         self.assertEqual(self.mock_events[self.domain], events)
         self.assertEqual(self.mock_events, self.session_manager._events)
 
@@ -364,12 +493,11 @@ class Test_WSSessionManager_get_events(SessionManagerTest):
 
         events = self.session_manager.get_events(self.domain, clear=True)
 
-        _flush_messages.assert_called_once_with()
         self.assertEqual(self.mock_events[self.domain], events)
         self.assertEqual([], self.session_manager._events[self.domain])
 
 
-class Test_wssessionmanager_clear_all_events(SessionManagerTest):
+class Test_wssessionmanager_reset(SessionManagerTest):
 
     def test(self):
         self.session_manager.domains = ["Page", "Network"]
@@ -377,11 +505,19 @@ class Test_wssessionmanager_clear_all_events(SessionManagerTest):
             "Page": [MagicMock(), MagicMock()],
             "Network": [MagicMock(), MagicMock()]
         }
+        self.session_manager._results = {1: MagicMock()}
+        self.session_manager._next_result_id = 2
+        self.session_manager._send_queue.append(MagicMock())
+        self.session_manager._recv_queue.append(MagicMock())
 
         self.session_manager.reset()
 
         for key, value in self.session_manager._events.items():
             self.assertEqual([], value)
+        self.assertFalse(self.session_manager._results)
+        self.assertEqual(0, self.session_manager._next_result_id)
+        self.assertFalse(self.session_manager._send_queue)
+        self.assertFalse(self.session_manager._recv_queue)
 
 
 @patch(MODULE_PATH + "WSSessionManager.execute")
@@ -421,97 +557,118 @@ class Test_WSSessionManager_enable_domain(SessionManagerTest):
 
 class Test_WSSessionManager_wait_for_result(SessionManagerTest):
 
-    @patch("browserdebuggertools.wssessionmanager._Timer",
-           new=MagicMock(return_value=MagicMock(timed_out=False)))
+    @patch(MODULE_PATH + "_Timer", new=MagicMock(return_value=MagicMock(timed_out=False)))
     def test_succeed_immediately(self):
         mock_result = MagicMock()
-        self.session_manager._find_next_result = MagicMock()
-        self.session_manager._find_next_result.side_effect = [mock_result]
+        self.session_manager._results[1] = mock_result
 
-        result = self.session_manager._wait_for_result()
+        result = self.session_manager._wait_for_result(1)
         self.assertEqual(mock_result, result)
 
-    @patch("browserdebuggertools.wssessionmanager._Timer",
-           new=MagicMock(return_value=MagicMock(timed_out=False)))
-    def test_wait_and_then_succeeed(self):
-
+    @patch(MODULE_PATH + "time")
+    @patch(MODULE_PATH + "_Timer", new=MagicMock(return_value=MagicMock(timed_out=False)))
+    def test_wait_and_then_succeeed(self, time):
         mock_result = MagicMock()
-        self.session_manager._find_next_result = MagicMock()
-        self.session_manager._find_next_result.side_effect = [ResultNotFoundError, mock_result]
+        self.session_manager._results = {}
+
+        def sleep(wait):
+            self.session_manager._results[1] = mock_result
+
+        time.sleep = sleep
+
         self.session_manager.timer = MagicMock(timed_out=False)
 
-        result = self.session_manager._wait_for_result()
+        result = self.session_manager._wait_for_result(1)
 
         self.assertEqual(mock_result, result)
 
-    @patch("browserdebuggertools.wssessionmanager._Timer",
-           new=MagicMock(return_value=MagicMock(timed_out=True)))
+    @patch(MODULE_PATH + "_Timer", new=MagicMock(return_value=MagicMock(timed_out=True)))
     def test_timed_out(self):
-
-        self.session_manager._recv = MagicMock()
         self.session_manager.timer = MagicMock(timed_out=True)
         with self.assertRaises(DevToolsTimeoutException):
-            self.session_manager._wait_for_result()
+            self.session_manager._wait_for_result(1)
 
 
-class Test_WSSessionManager__check_messaging_thread(SessionManagerTest):
+@patch(MODULE_PATH + "WSSessionManager._increment_message_producer_not_ok")
+class Test_WSSessionManager__check_message_producer(SessionManagerTest):
 
-    def test_ok(self):
+    def setUp(self):
+        super(Test_WSSessionManager__check_message_producer, self).setUp()
+        self.session_manager._setup_ws_session = MagicMock()
 
-        self.session_manager.messaging_thread = MagicMock(
-            is_alive=MagicMock(return_value=True), blocked=False
-        )
-        self.session_manager.setup_ws_session = MagicMock()
-        self.session_manager.increment_messaging_thread_not_ok = MagicMock()
+    def test_ok(self, _increment_message_producer_not_ok):
+        self.session_manager._recv_queue = MagicMock()
 
-        self.session_manager._check_messaging_thread()
+        self.session_manager._check_message_producer()
 
-        self.session_manager.setup_ws_session.assert_not_called()
-        self.session_manager.increment_messaging_thread_not_ok.assert_not_called()
+        self.session_manager._recv_queue.wait_for_messages.assert_called_once_with()
 
-    def test_blocked(self):
-        self.session_manager.messaging_thread = MagicMock(
-            is_alive=MagicMock(return_value=True), blocked=True
-        )
-        self.session_manager.setup_ws_session = MagicMock()
-        self.session_manager.increment_messaging_thread_not_ok = MagicMock()
-        self.session_manager.close = MagicMock()
+    def test_ws_closed(self, _increment_message_producer_not_ok):
+        self.session_manager._message_producer.health_check.side_effect = \
+            WebSocketConnectionClosedException
 
-        self.session_manager._check_messaging_thread()
+        self.session_manager._check_message_producer()
 
-        self.session_manager.setup_ws_session.assert_called_once_with()
-        self.session_manager.increment_messaging_thread_not_ok.assert_called_once_with()
-        self.session_manager.close.assert_called_once_with()
+        self.session_manager._increment_message_producer_not_ok.assert_called_once_with()
+        self.session_manager._setup_ws_session.assert_called_once_with()
 
-    def test_dead_because_connection_closed(self):
-        self.session_manager.messaging_thread = MagicMock(
-            is_alive=MagicMock(return_value=False), blocked=False
-        )
-        self.session_manager.setup_ws_session = MagicMock()
-        self.session_manager.increment_messaging_thread_not_ok = MagicMock()
-        self.session_manager.close = MagicMock()
-        self.session_manager.messaging_thread.exception = WebSocketConnectionClosedException()
+    def test_ws_blocked(self, _increment_message_producer_not_ok):
+        self.session_manager._message_producer.health_check.side_effect = WebSocketBlockedException
 
-        self.session_manager._check_messaging_thread()
+        self.session_manager._check_message_producer()
 
-        self.session_manager.setup_ws_session.assert_called_once_with()
-        self.session_manager.increment_messaging_thread_not_ok.assert_called_once_with()
+        self.session_manager._increment_message_producer_not_ok.assert_called_once_with()
+        self.session_manager._setup_ws_session.assert_called_once_with()
 
-    def test_dead_because_other(self):
-        self.session_manager.messaging_thread = MagicMock(
-            is_alive=MagicMock(return_value=False), blocked=False
-        )
-        self.session_manager.setup_ws_session = MagicMock()
-        self.session_manager.increment_messaging_thread_not_ok = MagicMock()
-        self.session_manager.close = MagicMock()
+    def test_other_failure(self, _increment_message_producer_not_ok):
+        self.session_manager._message_producer.health_check.side_effect = MockException()
 
-        class TestException(Exception):
-            pass
+        with self.assertRaises(MockException):
+            self.session_manager._check_message_producer()
 
-        self.session_manager.messaging_thread.exception = TestException()
 
-        with self.assertRaises(TestException):
-            self.session_manager._check_messaging_thread()
+@patch(MODULE_PATH + "time.time", MagicMock(return_value=100))
+class Test_WSSessionManager__increment_message_producer_not_ok(SessionManagerTest):
 
-        self.session_manager.setup_ws_session.assert_not_called()
-        self.session_manager.increment_messaging_thread_not_ok.assert_not_called()
+    def setUp(self):
+        super(Test_WSSessionManager__increment_message_producer_not_ok, self).setUp()
+        self.session_manager.MAX_RETRY_THREADS = 3
+        self.session_manager.RETRY_COUNT_TIMEOUT = 300
+
+    def test_first_run_on_ws(self):
+        self.session_manager._last_not_ok = None
+
+        self.session_manager._increment_message_producer_not_ok()
+
+        self.assertEqual(100, self.session_manager._last_not_ok)
+        self.assertEqual(1, self.session_manager._message_producer_not_ok_count)
+
+    def test_increment(self):
+        self.session_manager._last_not_ok = 49
+        self.session_manager._message_producer_not_ok_count = 1
+
+        self.session_manager._increment_message_producer_not_ok()
+
+        self.assertEqual(100, self.session_manager._last_not_ok)
+        self.assertEqual(2, self.session_manager._message_producer_not_ok_count)
+
+    def test_timeout_expired(self):
+        self.session_manager.RETRY_COUNT_TIMEOUT = 50
+        self.session_manager._last_not_ok = 49
+        self.session_manager._message_producer_not_ok_count = 3
+
+        self.session_manager._increment_message_producer_not_ok()
+
+        self.assertEqual(100, self.session_manager._last_not_ok)
+        self.assertEqual(1, self.session_manager._message_producer_not_ok_count)
+
+    def test_exceeded_max_failures(self):
+        self.session_manager._last_not_ok = 49
+        self.session_manager._message_producer_not_ok_count = 3
+        self.session_manager._exception = None
+
+        with self.assertRaises(MaxRetriesException):
+            self.session_manager._increment_message_producer_not_ok()
+
+        self.assertEqual(100, self.session_manager._last_not_ok)
+        self.assertEqual(4, self.session_manager._message_producer_not_ok_count)

@@ -115,17 +115,17 @@ class _WSMessageProducer(Thread):
             except websocket.WebSocketConnectionClosedException:
                 pass
 
-    def empty_send_queue(self):
+    def _empty_send_queue(self):
         while self._send_queue:
             message = self._send_queue.popleft()
             try:
                 self.ws.send(message)
             except Exception:
                 # Add the message to the beginning of the queue again
-                self._send_queue.append_left(message)
+                self._send_queue.appendleft(message)
                 raise
 
-    def empty_recv_queue(self):
+    def _empty_websocket(self):
         while not self._recv_queue.is_full():
             try:
                 message = self.ws.recv()
@@ -146,8 +146,8 @@ class _WSMessageProducer(Thread):
             self._last_poll = time.time()
             while self._continue:
 
-                self.empty_send_queue()
-                self.empty_recv_queue()
+                self._empty_send_queue()
+                self._empty_websocket()
 
                 self._send_queue.wait_for_messages()
                 self._last_poll = time.time()
@@ -246,11 +246,12 @@ class WSSessionManager(object):
 
         self._message_producer = None
 
-        self._message_consumer = Thread(target=self._flush_messages)
+        self._message_consumer = Thread(target=self._flush_messages, daemon=True)
         self._events_access_lock = Lock()
         self._should_flush_messages = True
+        self._exception = None
 
-        self.setup_ws_session()
+        self._setup_ws_session()
 
     def __del__(self):
         self.close()
@@ -261,11 +262,12 @@ class WSSessionManager(object):
         """
         try:
             self._message_producer.health_check()
-        except (websocket.WebSocketConnectionClosedException, WebSocketBlockedException) as e:
-            self.increment_message_producer_not_ok()
-            self.setup_ws_session()
+            self._recv_queue.wait_for_messages()
+        except (websocket.WebSocketConnectionClosedException, WebSocketBlockedException):
+            self._increment_message_producer_not_ok()
+            self._setup_ws_session()
 
-    def increment_message_producer_not_ok(self):
+    def _increment_message_producer_not_ok(self):
         now = time.time()
 
         if self._last_not_ok and (now - self._last_not_ok) > self.RETRY_COUNT_TIMEOUT:
@@ -281,12 +283,12 @@ class WSSessionManager(object):
                 )
             )
 
-    def setup_ws_session(self):
+    def _setup_ws_session(self):
 
         self._message_producer = _WSMessageProducer(self.port, self._send_queue, self._recv_queue)
         self._message_producer.start()
 
-        if not self._message_consumer.is_alive():
+        if not (self._message_consumer.is_alive() or self._exception):
             # The message consumer needs to be started or we cannot enable the domains
             self._message_consumer.start()
 
@@ -332,14 +334,16 @@ class WSSessionManager(object):
     def _flush_messages(self):
         """ Consumes messages from the message queue
         """
-        while self._should_flush_messages:
-            while self._recv_queue:
-                message = self._recv_queue.popleft()
-                message = json.loads(message)
-                self._append(message)
+        try:
+            while self._should_flush_messages:
+                while self._recv_queue:
+                    message = self._recv_queue.popleft()
+                    message = json.loads(message)
+                    self._append(message)
 
-            self._check_message_producer()
-            self._recv_queue.wait_for_messages()
+                self._check_message_producer()
+        except Exception as e:
+            self._exception = e
 
     def _execute(self, domain_name, method_name, params=None):
 
@@ -429,6 +433,8 @@ class WSSessionManager(object):
         while not timer.timed_out:
             if result_id in self._results:
                 return self._results.pop(result_id)
+            if self._exception:
+                raise self._exception
 
             time.sleep(0.01)
         raise DevToolsTimeoutException(
