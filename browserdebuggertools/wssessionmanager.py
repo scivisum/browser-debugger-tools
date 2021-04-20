@@ -246,7 +246,8 @@ class WSSessionManager(object):
 
         self._message_producer = None
 
-        self._message_consumer = Thread(target=self._flush_messages, daemon=True)
+        self._message_consumer = Thread(target=self._flush_messages)
+        self._message_consumer.daemon = True
         self._events_access_lock = Lock()
         self._should_flush_messages = True
         self._exception = None
