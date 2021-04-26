@@ -1,3 +1,4 @@
+import json
 import time
 import os
 from unittest import TestCase
@@ -13,11 +14,20 @@ from tests.integrationtests.test_wssessionmanager import _DummyWebsocket
 MODULE_PATH = "browserdebuggertools.chrome.interface."
 
 
+class _SlowWebsocket(_DummyWebsocket):
+
+    def recv(self):
+        time.sleep(4)
+        return super(_SlowWebsocket, self).recv()
+
+
 class ChromeInterfaceTest(TestCase):
+
+    WEBSOCKET_CLS = _DummyWebsocket
 
     def setUp(self):
         with patch.object(
-            _WSMessageProducer, "_get_websocket", new=MagicMock(return_value=_DummyWebsocket())
+            _WSMessageProducer, "_get_websocket", new=MagicMock(return_value=self.WEBSOCKET_CLS())
         ):
             self.interface = ChromeInterface(1234)
 
@@ -46,13 +56,12 @@ class Test_ChromeInterface_take_screenshot(ChromeInterfaceTest):
 
 class Test_ChromeInterface_set_timeout(ChromeInterfaceTest):
 
+    WEBSOCKET_CLS = _SlowWebsocket
+
     def test_timeout_exception_raised(self):
         start = time.time()
         with self.assertRaises(DevToolsTimeoutException):
             with self.interface.set_timeout(3):
-                def recv():
-                    time.sleep(5)
-                self.interface._session_manager._message_producer.ws.recv = recv
                 self.interface.execute("Something", "Else")
 
         elapsed = time.time() - start
@@ -63,12 +72,12 @@ class Test_ChromeInterface_set_timeout(ChromeInterfaceTest):
 class Test_ChromeInterface_get_url(ChromeInterfaceTest):
 
     def load_pages(self, count):
-        mock_message = {"method": "Page.domContentEventFired"}
+        mock_message = json.dumps({"method": "Page.domContentEventFired"})
         for _ in range(count):
             self.interface._session_manager._message_producer.ws.queue.append(mock_message)
 
     def load_js_pages(self, count):
-        mock_message = {"method": "Page.navigatedWithinDocument", "params": {"url": ""}}
+        mock_message = json.dumps({"method": "Page.navigatedWithinDocument", "params": {"url": ""}})
 
         for _ in range(count):
             self.interface._session_manager._message_producer.ws.queue.append(mock_message)

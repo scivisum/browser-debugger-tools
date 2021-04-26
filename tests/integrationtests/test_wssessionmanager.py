@@ -104,8 +104,6 @@ class Test_WSSessionManager_get_events(TestCase):
             # make sure we don't lose any
             last_event_collected = events[0]
             next_event = {"method": "Network.Something", "params": {"index": -1}}
-            if self.session_manager._recv_queue:
-                next_event = json.loads(self.session_manager._recv_queue.popleft())
             first_event = {"method": "Network.Something", "params": {"index": -1}}
             if self.session_manager._events["Network"]:
                 first_event = self.session_manager._events["Network"][0]
@@ -155,8 +153,7 @@ class BlockingWS(_DummyWebsocket):
             while self._continue:
                 time.sleep(0.1)
 
-        else:
-            return super(BlockingWS, self).recv()
+        return super(BlockingWS, self).recv()
 
     def unblock(self):
         self._continue = False
