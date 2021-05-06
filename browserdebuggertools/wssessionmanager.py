@@ -97,6 +97,9 @@ class _WSMessageProducer(Thread):
         # noinspection PyBroadException
         try:
             yield
+        except websocket.WebSocketConnectionClosedException as e:
+            self.exception = e
+            logging.warning("WS messaging thread terminated due to closed connection")
         except Exception as e:
             self.exception = e
             logging.warning("WS messaging thread terminated with exception", exc_info=True)

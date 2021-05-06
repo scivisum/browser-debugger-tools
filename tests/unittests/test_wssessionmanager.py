@@ -595,3 +595,32 @@ class Test_WSSessionManager__increment_message_producer_not_ok(SessionManagerTes
 
         self.assertEqual(100, self.session_manager._last_not_ok)
         self.assertEqual(4, self.session_manager._message_producer_not_ok_count)
+
+
+@patch(MODULE_PATH + "logging")
+class Test_WSMessageProducer_ws_io(WSMessageProducerTest):
+
+    def test_WebSocketConnectionClosedException(self, _logging):
+        self.ws_message_producer.close = MagicMock()
+
+        with self.ws_message_producer._ws_io():
+            raise WebSocketConnectionClosedException("foo")
+
+        _logging.warning.assert_called_once_with(
+            "WS messaging thread terminated due to closed connection"
+        )
+        self.ws_message_producer.close.assert_called_once_with()
+
+    def test_other_exception(self, _logging):
+        self.ws_message_producer.close = MagicMock()
+
+        e = Exception("foo")
+
+        with self.ws_message_producer._ws_io():
+            raise e
+
+        _logging.warning.assert_called_once_with(
+            "WS messaging thread terminated with exception", exc_info=True
+        )
+        self.ws_message_producer.close.assert_called_once_with()
+        self.assertEqual(e, self.ws_message_producer.exception)
