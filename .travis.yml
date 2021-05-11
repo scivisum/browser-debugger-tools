@@ -5,8 +5,7 @@ addons:
   chrome: stable
 language: python
 python:
-  - "2.7"
-  - "3.5"
+  - "3.8"
 env:
   global:
     - DEFAULT_CHROME_BROWSER_PATH=google-chrome-stable

@@ -1,3 +1,6 @@
+from websocket import WebSocketException
+
+
 class DevToolsException(Exception):
     pass
 
@@ -26,10 +29,6 @@ class MethodNotFoundError(ProtocolError, NotFoundError):
     pass
 
 
-class ResultNotFoundError(NotFoundError):
-    pass
-
-
 class ResourceNotFoundError(NotFoundError):
     pass
 
@@ -51,4 +50,8 @@ class MessagingThreadIsDeadError(DevToolsException):
 
 
 class InvalidParametersError(ProtocolError):
+    pass
+
+
+class WebSocketBlockedException(WebSocketException, DevToolsException):
     pass
