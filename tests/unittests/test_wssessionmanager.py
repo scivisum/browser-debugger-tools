@@ -1,6 +1,6 @@
+import collections
 import copy
 import socket
-from threading import Event
 from unittest import TestCase
 
 from mock import patch, MagicMock, call, PropertyMock
@@ -13,7 +13,7 @@ from browserdebuggertools.exceptions import (
     MaxRetriesException
 )
 from browserdebuggertools.wssessionmanager import (
-    WSSessionManager, _WSMessageProducer, NotifiableDeque
+    WSSessionManager, _WSMessageProducer
 )
 
 MODULE_PATH = "browserdebuggertools.wssessionmanager."
@@ -31,7 +31,7 @@ class WSMessageProducerTest(TestCase):
             return MagicMock()
 
     def setUp(self):
-        self.send_queue = NotifiableDeque()
+        self.send_queue = collections.deque()
         self.messaging_thread = self.MockWSMessageProducer(1111, self.send_queue, MagicMock())
         self.ws_message_producer = self.messaging_thread
 
@@ -179,7 +179,7 @@ class Test__WSMessageProducer__empty_websocket(WSMessageProducerTest):
 class Test__WSMessageProducer_run(WSMessageProducerTest):
 
     def prepare(self, time):
-        NotifiableDeque._POLL_INTERVAL = 0
+        _WSMessageProducer._POLL_INTERVAL = 0
         self.next_time = 0
 
         def increment_time():

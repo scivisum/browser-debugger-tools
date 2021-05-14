@@ -9,7 +9,7 @@ from mock import MagicMock, patch
 
 from browserdebuggertools.exceptions import DevToolsTimeoutException, MaxRetriesException
 from browserdebuggertools.wssessionmanager import (
-    WSSessionManager, _WSMessageProducer, NotifiableDeque
+    WSSessionManager, _WSMessageProducer
 )
 
 MODULE_PATH = "browserdebuggertools.WSSessionManager."
@@ -92,7 +92,6 @@ class Test_WSSessionManager_get_events(TestCase):
         with patch.object(
             _WSMessageProducer, "_get_websocket", new=MagicMock(return_value=self.ws)
         ):
-            NotifiableDeque._MAX_QUEUE_BUFFER = 9999
             self.session_manager = WSSessionManager(1234, 1, {"Network": {}})
 
             events = list(reversed(self.session_manager.get_events("Network", clear=True)))
@@ -157,6 +156,12 @@ class BlockingWS(_DummyWebsocket):
 
     def unblock(self):
         self._continue = False
+
+
+class TimeoutBlockingWS(BlockingWS):
+
+    def send(self, data):
+        pass
 
 
 class ExceptionThrowingWS(_DummyWebsocket):
@@ -229,14 +234,14 @@ class Test_WSSessionManager_execute(TestCase):
     def test_thread_blocks_causes_timeout(self):
 
         with patch.object(_WSMessageProducer, "_get_websocket",
-                          new=MagicMock(return_value=BlockingWS(times_to_block=1))):
+                          new=MagicMock(return_value=TimeoutBlockingWS())):
 
             self.session_manager = WSSessionManager(1234, 3)
             self.resetWS()
             with self.assertRaises(DevToolsTimeoutException):
                 start = time.time()
                 self.session_manager.execute("Network", "enable")
-                self.assertLess(time.time() - start, 5)
+            self.assertLess(time.time() - start, 5)
 
     def test_max_thread_blocks_exceeded(self):
 
