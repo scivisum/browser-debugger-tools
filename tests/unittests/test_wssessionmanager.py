@@ -1,6 +1,6 @@
+import collections
 import copy
 import socket
-from threading import Event
 from unittest import TestCase
 
 from mock import patch, MagicMock, call, PropertyMock
@@ -13,7 +13,7 @@ from browserdebuggertools.exceptions import (
     MaxRetriesException
 )
 from browserdebuggertools.wssessionmanager import (
-    WSSessionManager, _WSMessageProducer, NotifiableDeque
+    WSSessionManager, _WSMessageProducer
 )
 
 MODULE_PATH = "browserdebuggertools.wssessionmanager."
@@ -31,7 +31,7 @@ class WSMessageProducerTest(TestCase):
             return MagicMock()
 
     def setUp(self):
-        self.send_queue = NotifiableDeque()
+        self.send_queue = collections.deque()
         self.messaging_thread = self.MockWSMessageProducer(1111, self.send_queue, MagicMock())
         self.ws_message_producer = self.messaging_thread
 
@@ -179,7 +179,7 @@ class Test__WSMessageProducer__empty_websocket(WSMessageProducerTest):
 class Test__WSMessageProducer_run(WSMessageProducerTest):
 
     def prepare(self, time):
-        NotifiableDeque._POLL_INTERVAL = 0
+        _WSMessageProducer._POLL_INTERVAL = 0
         self.next_time = 0
 
         def increment_time():
@@ -197,7 +197,7 @@ class Test__WSMessageProducer_run(WSMessageProducerTest):
 
         self.ws_message_producer.run()
 
-        self.assertEqual(10, self.ws_message_producer._last_poll)
+        self.assertEqual(10, self.ws_message_producer._last_ws_attempt)
 
     def test_exception(self, time):
         exception = Exception()
@@ -206,7 +206,7 @@ class Test__WSMessageProducer_run(WSMessageProducerTest):
 
         self.ws_message_producer.run()
 
-        self.assertEqual(0, self.ws_message_producer._last_poll)
+        self.assertEqual(0, self.ws_message_producer._last_ws_attempt)
         self.assertEqual(exception, self.ws_message_producer.exception)
 
 
@@ -214,7 +214,7 @@ class Test__WSMessagingThread_blocked(WSMessageProducerTest):
 
     def test_thread_not_started(self):
 
-        self.messaging_thread._last_poll = None
+        self.messaging_thread._last_ws_attempt = None
 
         self.assertFalse(self.messaging_thread.blocked)
 
@@ -224,7 +224,7 @@ class Test__WSMessagingThread_blocked(WSMessageProducerTest):
         now = 100
         _time.time.return_value = now
 
-        self.messaging_thread._last_poll = now - self.messaging_thread._BLOCKED_TIMEOUT - 1
+        self.messaging_thread._last_ws_attempt = now - self.messaging_thread._BLOCKED_TIMEOUT - 1
 
         self.assertTrue(self.messaging_thread.blocked)
 
@@ -234,7 +234,7 @@ class Test__WSMessagingThread_blocked(WSMessageProducerTest):
         now = 100
         _time.time.return_value = now
 
-        self.messaging_thread._last_poll = now - self.messaging_thread._BLOCKED_TIMEOUT + 1
+        self.messaging_thread._last_ws_attempt = now - self.messaging_thread._BLOCKED_TIMEOUT + 1
 
         self.assertFalse(self.messaging_thread.blocked)
 

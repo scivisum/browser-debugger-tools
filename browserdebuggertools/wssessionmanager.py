@@ -4,7 +4,7 @@ import logging
 import socket
 import time
 import collections
-from threading import Thread, Event, Lock
+from threading import Thread, Lock
 
 from typing import Dict
 
@@ -22,43 +22,20 @@ from browserdebuggertools.exceptions import (
 )
 
 
-class NotifiableDeque(collections.deque):
-    """ A Queue with the benefits of deque speed
-        It can wait until there are new messages or the timeout is met
-    """
-    _POLL_INTERVAL = 1
-
-    def __init__(self):
-        super(NotifiableDeque, self).__init__()
-        self._poll_signal = Event()
-
-    def append(self, message):
-        """ Appends to the queue and allows any waiting threads to start popping from it
-        """
-        super(NotifiableDeque, self).append(message)
-        self._poll_signal.set()
-
-    def wait_for_messages(self):
-        """ Waits until there are messages or the poll interval time
-        """
-        self._poll_signal.wait(self._POLL_INTERVAL)
-        if self._poll_signal.is_set():
-            self._poll_signal.clear()
-
-
 class _WSMessageProducer(Thread):
     """ Interfaces with the websocket to send messages from the send queue
         or put messages from the websocket into recv queue
     """
     _CONN_TIMEOUT = 15
     _BLOCKED_TIMEOUT = 5
+    _POLL_INTERVAL = 0.01  # How long to wait for new ws messages
 
     def __init__(self, port, send_queue, on_message):
         super(_WSMessageProducer, self).__init__()
         self._port = port
         self._send_queue = send_queue
         self._on_message = on_message
-        self._last_poll = None
+        self._last_ws_attempt = None
         self._continue = True
 
         self.exception = None
@@ -141,14 +118,12 @@ class _WSMessageProducer(Thread):
 
         with self._ws_io():
 
-            self._last_poll = time.time()
             while self._continue:
-
+                self._last_ws_attempt = time.time()
                 self._empty_send_queue()
                 self._empty_websocket()
 
-                self._send_queue.wait_for_messages()
-                self._last_poll = time.time()
+                time.sleep(self._POLL_INTERVAL)
 
     @property
     def blocked(self):
@@ -161,12 +136,13 @@ class _WSMessageProducer(Thread):
             some messages could allow us to reduce the load on the websocket
             so raising an exception in this case allows us to empty the send queue and try again.
 
-            **  This could be solved by having a separate thread to handle sending messages,
-                assuming ws.send() doesn't hang and is also thread safe.
-                Then we could update self._last_poll after every successful ws.send()/ws.recv()
+            **  This could be solved by not handling sending messages in the thread,
+                assuming ws.send() doesn't hang and is atomic.
+                Then we could update self._last_ws_attempt after every successful ws send()/recv()
         """
         return (
-            self._last_poll and ((time.time() - self._last_poll) > self._BLOCKED_TIMEOUT)
+            self._last_ws_attempt
+            and ((time.time() - self._last_ws_attempt) > self._BLOCKED_TIMEOUT)
         )
 
     def health_check(self):
@@ -237,7 +213,7 @@ class WSSessionManager(object):
         self._message_producer_lock = Lock()  # Lock making sure we don't create 2 ws connections
         self._last_not_ok = None
         self._message_producer_not_ok_count = 0
-        self._send_queue = NotifiableDeque()
+        self._send_queue = collections.deque()
 
         self.port = port
         self._message_producer = None
