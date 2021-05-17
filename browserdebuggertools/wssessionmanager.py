@@ -35,7 +35,7 @@ class _WSMessageProducer(Thread):
         self._port = port
         self._send_queue = send_queue
         self._on_message = on_message
-        self._last_poll = None
+        self._last_ws_attempt = None
         self._continue = True
 
         self.exception = None
@@ -118,14 +118,12 @@ class _WSMessageProducer(Thread):
 
         with self._ws_io():
 
-            self._last_poll = time.time()
             while self._continue:
-
+                self._last_ws_attempt = time.time()
                 self._empty_send_queue()
                 self._empty_websocket()
 
                 time.sleep(self._POLL_INTERVAL)
-                self._last_poll = time.time()
 
     @property
     def blocked(self):
@@ -138,12 +136,13 @@ class _WSMessageProducer(Thread):
             some messages could allow us to reduce the load on the websocket
             so raising an exception in this case allows us to empty the send queue and try again.
 
-            **  This could be solved by having a separate thread to handle sending messages,
-                assuming ws.send() doesn't hang and is also thread safe.
-                Then we could update self._last_poll after every successful ws.send()/ws.recv()
+            **  This could be solved by not handling sending messages in the thread,
+                assuming ws.send() doesn't hang and is atomic.
+                Then we could update self._last_ws_attempt after every successful ws send()/recv()
         """
         return (
-            self._last_poll and ((time.time() - self._last_poll) > self._BLOCKED_TIMEOUT)
+            self._last_ws_attempt
+            and ((time.time() - self._last_ws_attempt) > self._BLOCKED_TIMEOUT)
         )
 
     def health_check(self):

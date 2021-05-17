@@ -197,7 +197,7 @@ class Test__WSMessageProducer_run(WSMessageProducerTest):
 
         self.ws_message_producer.run()
 
-        self.assertEqual(10, self.ws_message_producer._last_poll)
+        self.assertEqual(10, self.ws_message_producer._last_ws_attempt)
 
     def test_exception(self, time):
         exception = Exception()
@@ -206,7 +206,7 @@ class Test__WSMessageProducer_run(WSMessageProducerTest):
 
         self.ws_message_producer.run()
 
-        self.assertEqual(0, self.ws_message_producer._last_poll)
+        self.assertEqual(0, self.ws_message_producer._last_ws_attempt)
         self.assertEqual(exception, self.ws_message_producer.exception)
 
 
@@ -214,7 +214,7 @@ class Test__WSMessagingThread_blocked(WSMessageProducerTest):
 
     def test_thread_not_started(self):
 
-        self.messaging_thread._last_poll = None
+        self.messaging_thread._last_ws_attempt = None
 
         self.assertFalse(self.messaging_thread.blocked)
 
@@ -224,7 +224,7 @@ class Test__WSMessagingThread_blocked(WSMessageProducerTest):
         now = 100
         _time.time.return_value = now
 
-        self.messaging_thread._last_poll = now - self.messaging_thread._BLOCKED_TIMEOUT - 1
+        self.messaging_thread._last_ws_attempt = now - self.messaging_thread._BLOCKED_TIMEOUT - 1
 
         self.assertTrue(self.messaging_thread.blocked)
 
@@ -234,7 +234,7 @@ class Test__WSMessagingThread_blocked(WSMessageProducerTest):
         now = 100
         _time.time.return_value = now
 
-        self.messaging_thread._last_poll = now - self.messaging_thread._BLOCKED_TIMEOUT + 1
+        self.messaging_thread._last_ws_attempt = now - self.messaging_thread._BLOCKED_TIMEOUT + 1
 
         self.assertFalse(self.messaging_thread.blocked)
 
