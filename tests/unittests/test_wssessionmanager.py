@@ -1,6 +1,7 @@
 import collections
 import copy
 import socket
+import time
 from unittest import TestCase
 
 from mock import patch, MagicMock, call, PropertyMock
@@ -173,13 +174,11 @@ class Test__WSMessageProducer__empty_websocket(WSMessageProducerTest):
         ], self.processed_messages)
 
 
-@patch(MODULE_PATH + "time")
 @patch(MODULE_PATH + "_WSMessageProducer._empty_send_queue", MagicMock())
 @patch(MODULE_PATH + "_WSMessageProducer._empty_websocket", MagicMock())
 class Test__WSMessageProducer_run(WSMessageProducerTest):
 
-    def prepare(self, time):
-        _WSMessageProducer._POLL_INTERVAL = 0
+    def prepare(self, time_):
         self.next_time = 0
 
         def increment_time():
@@ -190,24 +189,59 @@ class Test__WSMessageProducer_run(WSMessageProducerTest):
 
             return current_time
 
-        time.time = increment_time
+        time_.time = increment_time
 
-    def test(self, time):
-        self.prepare(time)
+    @patch(MODULE_PATH + "_WSMessageProducer._POLL_INTERVAL", 0)
+    @patch(MODULE_PATH + "time")
+    def test(self, time_):
+        self.prepare(time_)
 
         self.ws_message_producer.run()
 
         self.assertEqual(10, self.ws_message_producer._last_ws_attempt)
 
-    def test_exception(self, time):
+    @patch(MODULE_PATH + "_WSMessageProducer._POLL_INTERVAL", 0)
+    @patch(MODULE_PATH + "time")
+    def test_exception(self, time_):
         exception = Exception()
         self.ws_message_producer._empty_send_queue.side_effect = exception
-        self.prepare(time)
+        self.prepare(time_)
 
         self.ws_message_producer.run()
 
         self.assertEqual(0, self.ws_message_producer._last_ws_attempt)
         self.assertEqual(exception, self.ws_message_producer.exception)
+
+    def test_wait_timeout(self):
+
+        def _stop():
+            self.ws_message_producer._continue = False
+
+        self.ws_message_producer._empty_send_queue = MagicMock()
+        self.ws_message_producer._empty_websocket.side_effect = _stop
+        self.ws_message_producer.poll_signal.clear = MagicMock()
+        start = time.time()
+
+        self.ws_message_producer.run()
+
+        self.assertGreater(time.time() - start, 1)
+        self.ws_message_producer.poll_signal.clear.assert_not_called()
+
+    def test_poll_signal_set(self):
+
+        def _stop():
+            self.ws_message_producer._continue = False
+
+        self.ws_message_producer._empty_send_queue = MagicMock()
+        self.ws_message_producer._empty_websocket.side_effect = _stop
+        self.ws_message_producer.poll_signal.set()
+        self.ws_message_producer.poll_signal.clear = MagicMock()
+
+        start = time.time()
+        self.ws_message_producer.run()
+
+        self.assertLess(time.time() - start, 1)
+        self.ws_message_producer.poll_signal.clear.assert_called_once_with()
 
 
 class Test__WSMessagingThread_blocked(WSMessageProducerTest):

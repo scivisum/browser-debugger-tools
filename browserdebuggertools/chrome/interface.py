@@ -90,7 +90,7 @@ class ChromeInterface(object):
             self._session_manager.timeout = _timeout
 
     def navigate(self, url):
-        """ Navigates to the given url asynchronously
+        """ Navigates to the given url
         """
         return self.execute("Page", "navigate", {
             "url": url

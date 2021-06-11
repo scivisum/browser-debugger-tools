@@ -4,7 +4,7 @@ import logging
 import socket
 import time
 import collections
-from threading import Thread, Lock
+from threading import Thread, Lock, Event
 
 from typing import Dict
 
@@ -28,7 +28,7 @@ class _WSMessageProducer(Thread):
     """
     _CONN_TIMEOUT = 15
     _BLOCKED_TIMEOUT = 5
-    _POLL_INTERVAL = 0.01  # How long to wait for new ws messages
+    _POLL_INTERVAL = 1  # How long to wait for new ws messages
 
     def __init__(self, port, send_queue, on_message):
         super(_WSMessageProducer, self).__init__()
@@ -41,6 +41,7 @@ class _WSMessageProducer(Thread):
         self.exception = None
         self.ws = self._get_websocket()
         self.daemon = True
+        self.poll_signal = Event()
 
     def __del__(self):
         self.close()
@@ -122,8 +123,9 @@ class _WSMessageProducer(Thread):
                 self._last_ws_attempt = time.time()
                 self._empty_send_queue()
                 self._empty_websocket()
-
-                time.sleep(self._POLL_INTERVAL)
+                self.poll_signal.wait(self._POLL_INTERVAL)
+                if self.poll_signal.isSet():
+                    self.poll_signal.clear()
 
     @property
     def blocked(self):
@@ -386,6 +388,7 @@ class WSSessionManager(object):
                 return self._results.pop(result_id)
 
             self._check_message_producer()
+            self._message_producer.poll_signal.set()
             time.sleep(0.01)
         raise DevToolsTimeoutException(
             "Reached timeout limit of {}, waiting for a response message".format(self.timeout)
