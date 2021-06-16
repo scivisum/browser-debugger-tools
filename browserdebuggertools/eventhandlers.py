@@ -32,6 +32,23 @@ class EventHandler(object):
         pass
 
 
+class AuthEventHandler(EventHandler):
+
+    def __init__(self, origins, respond_callback, cancel_callback):
+        self._origins = origins
+        self._respond_callback = respond_callback
+        self._cancel_callback = cancel_callback
+
+    def handle(self, message):
+        if message.get("method") == "Fetch.authRequired":
+            origin = message["params"]["authChallenge"]["origin"]
+            request_id = message["params"]["requestId"]
+            if origin in self._origins:
+                self._respond_callback(request_id, origin)
+            else:
+                self._cancel_callback(request_id)
+
+
 class PageLoadEventHandler(EventHandler):
 
     supported_events = [

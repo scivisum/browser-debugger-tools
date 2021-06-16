@@ -1,12 +1,49 @@
 import contextlib
+import itertools
 import logging
 from base64 import b64decode, b64encode
 
+from browserdebuggertools.eventhandlers import AuthEventHandler
 from browserdebuggertools.exceptions import ResourceNotFoundError
 from browserdebuggertools.wssessionmanager import WSSessionManager
 
 
 logging.basicConfig(format='%(levelname)s:%(message)s')
+
+
+class _Interception(dict):
+
+    def __init__(self, origin):
+        super(_Interception, self).__init__([
+            ("urlPattern", origin + "*"), ("resourceType", "Document"),
+            ("interceptionStage", "HeadersReceived")
+        ])
+
+
+class _AuthInterception(_Interception):
+
+    def __init__(self, origin, username, password):
+        super(_AuthInterception, self).__init__(origin)
+        self.username = username
+        self.password = password
+
+
+class _InterceptionManager(object):
+
+    def __init__(self):
+        self._interceptions = {
+            "auth": []
+        }
+
+    def add_auth_interception(self, username, password, origin):
+        if (username, password, origin) not in self._interceptions["auth"]:
+            self._interceptions["auth"].append(_AuthInterception(origin, username, password))
+
+    def get_interceptions(self):
+        return list(itertools.chain.from_iterable(self._interceptions.values()))
+
+    def get_auth_credentials(self):
+        return dict([(i.origin, (i.username, i.password)) for i in self._interceptions["auth"]])
 
 
 class ChromeInterface(object):
@@ -32,6 +69,7 @@ class ChromeInterface(object):
         # type: WSSessionManager
         self._session_manager = WSSessionManager(port, timeout, domains=domains)
         self._dom_manager = _DOMManager(self._session_manager)
+        self._interception_manager = _InterceptionManager()
 
     def quit(self):
         self._session_manager.close()
@@ -211,6 +249,21 @@ class ChromeInterface(object):
 
         root_node_id = self._session_manager.event_handlers["PageLoad"].get_root_backend_node_id()
         return self._dom_manager.get_outer_html(root_node_id)
+
+    def auth(self, username, password, origin):
+        self._interception_manager.add_auth_interception(username, password, origin)
+        interceptions = self._interception_manager.get_interceptions()
+        if interceptions:
+            self.enable_domain("Fetch", params={
+                "patterns": interceptions,
+                "handleAuthRequests": True
+            })
+            credentials = self._interception_manager.get_auth_credentials()
+            handler = AuthEventHandler(
+                credentials.keys(),
+                lambda: self.execute("Fetch.")
+            )
+
 
 
 class _DOMManager(object):
