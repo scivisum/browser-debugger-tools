@@ -286,6 +286,12 @@ class WSSessionManager(object):
         elif "error" in message:
             result_id = message.pop("id")
             self._results[result_id] = message
+        elif message.get("method") == "Target.attachedToTarget":
+            domain, event = message.get("method").split(".")
+            with self._events_access_lock:
+                if (self._events.get(domain) is None):
+                    self._events[domain] = []
+                self._events[domain].append(message)
         elif "method" in message:
             method = message["method"]
             if method in self._internal_events:
@@ -398,8 +404,8 @@ class WSSessionManager(object):
 
         if not parameters:
             parameters = {}
-
-        self.execute(domain_name, "enable", parameters)
+        if domain_name is not "Target":
+            self.execute(domain_name, "enable", parameters)
         self._add_domain(domain_name, parameters)
 
         logging.info("\"{}\" domain has been enabled".format(domain_name))
