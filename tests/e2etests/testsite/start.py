@@ -90,6 +90,15 @@ class TestSite(object):
         return env.get_template('iframes.html').render()
 
     @cherrypy.expose
+    def display_agent_new_tab(self):
+        return env.get_template('display_agent_new_tab.html').render()
+
+    @cherrypy.expose
+    def echo_headers(self, header=''):
+        tmpl = env.get_template('echo_headers.html')
+        return tmpl.render(header=header)
+
+    @cherrypy.expose
     def fake_load_page(self):
         fake_page_script = "<script>" \
                          "function fake_page_load(){" \
