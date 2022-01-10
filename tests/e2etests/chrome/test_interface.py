@@ -676,3 +676,4 @@ class Test_ChromeInterface_test_new_tab_content_headed(
             self.devtools_client._session_manager._message_producer.ws = ws
             self.devtools_client.execute("Emulation", "setUserAgentOverride", {"userAgent": "Test"})
             self.assertIn('Chrome', self.devtools_client.get_page_source())
+            self.devtools_client._session_manager._message_producer.ws = main_ws
