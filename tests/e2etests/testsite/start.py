@@ -94,9 +94,9 @@ class TestSite(object):
         return env.get_template('display_agent_new_tab.html').render()
 
     @cherrypy.expose
-    def echo_headers(self, header=''):
+    def echo_headers(self):
         tmpl = env.get_template('echo_headers.html')
-        return tmpl.render(header=header)
+        return tmpl.render(useragent=cherrypy.request.headers.get('User-Agent'))
 
     @cherrypy.expose
     def fake_load_page(self):
