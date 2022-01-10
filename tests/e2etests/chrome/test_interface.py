@@ -1,9 +1,13 @@
+import collections
+import logging
 import os
 import subprocess
 import shutil
 import time
 import tempfile
 from unittest import TestCase
+
+import websocket
 from browserdebuggertools.wssessionmanager import (
     WSSessionManager, _WSMessageProducer
 )
@@ -13,7 +17,7 @@ from requests import ConnectionError
 
 from browserdebuggertools.exceptions import (
     DevToolsException, DevToolsTimeoutException, JavascriptDialogNotFoundError,
-    ResourceNotFoundError, MessagingThreadIsDeadError
+    ResourceNotFoundError, MessagingThreadIsDeadError, TabNotFoundError
 )
 from browserdebuggertools.models import JavascriptDialog
 from tests.e2etests.testsite.start import Server as TestSiteServer, env
@@ -38,11 +42,11 @@ class ChromeInterfaceTest(object):
         cls.testSite = TestSiteServer()
         cls.testSite.start()
 
-        devtools_port = get_free_port()
+        cls.devtools_port =  get_free_port()
 
         cls.browser = subprocess.Popen([
             BROWSER_PATH,
-            "--remote-debugging-port=%s" % devtools_port,
+            "--remote-debugging-port=%s" % cls.devtools_port,
             "--no-default-browser-check",
             "--headless" if cls.headless else "",
             "--user-data-dir=%s" % cls.browser_cache_dir,
@@ -55,7 +59,7 @@ class ChromeInterfaceTest(object):
             time.sleep(3)
 
             try:
-                cls.devtools_client = ChromeInterface(devtools_port)
+                cls.devtools_client = ChromeInterface(cls.devtools_port)
                 break
 
             except ConnectionError:
@@ -588,246 +592,87 @@ class Test_ChromeInterface_test_get_frame_html_headless(
 def _cleanupHTML(html):
     return html.replace("\n", "").replace("  ", "")
 
-
 class Test_ChromeInterface_test_new_tab_content_headed(
     HeadedChromeInterfaceTest, TestCase):
 
     def setUp(self):
+        self._send_queue = collections.deque()
+        # self.message_prducer = _WSMessageProducer(self.devtools_port, self._send_queue,)
+
         self.devtools_client.enable_domain("Target")
         self.devtools_client.execute("Target", "setAutoAttach", {"autoAttach":True, "waitForDebuggerOnStart":True, "flatten":True})
+        time.sleep(2)
         self.devtools_client.navigate("http://localhost:%s/display_agent_new_tab" % self.testSite.port)
-
+        
 
     def tearDown(self):
         pass
         # self.devtools_client.disable_domain("Page")
 
-    def _get_responses_received(self):
+    def _get_attached_event(self):
 
-        responses_received = []
-        for event in self.devtools_client.get_events("Target"):
-            if event.get("method") == "Target.attachedToTarget":
-                responses_received.append(event["params"])
-        return responses_received
+        timeout = time.time() + 20
+        while time.time() < timeout:
+            for event in self.devtools_client.get_events("Target", clear=True):
+                print(event)
+                if event.get("method") == "Target.attachedToTarget":
+                    return event["params"]
+        raise Exception("Timed out waiting for attached event")
+
+    def get_websocket_url(self, port):
+        import requests
+        response = requests.get(
+            "http://localhost:{}/json".format(port), timeout=15
+        )
+        if not response.ok:
+            raise DevToolsException("{} {} for url: {}".format(
+                response.status_code, response.reason, response.url)
+            )
+
+        tabs = [target for target in response.json() if target["type"] == "page"]
+        if not tabs:
+            raise TabNotFoundError("There is no tab to connect to.")
+        return tabs[0]["webSocketDebuggerUrl"]
+
+    def get_websocket(self):
+        websocket_url = self.get_websocket_url(self.devtools_port)
+        logging.info("Connecting to websocket %s" % websocket_url)
+        ws = websocket.create_connection(
+            websocket_url, timeout=15
+        )
+        ws.settimeout(0)  # Don"t wait for new messages
+        return ws
+
+
 
 
     def test_connect_next_tab(self):
+        '''
+        This test checks if the setAutoattach is *not* working properly in new tabs. 
+        If the functionality is not working in new tabs, it will not change the userAgent. Otherwise,
+        It should change it to 'Test'.
+        A not worthy mentioning is that Google Chrome does NOT issue attachment messages. These messages are
+        only shown in Chromium.
+        '''
         assert isinstance(self, ChromeInterfaceTest)
-        response = self._get_responses_received()
-        while len(response) == 0:
-            response = self._get_responses_received()
-        sessionId = response[0]["sessionId"]
 
-        setup_protocol = ''' Session = class {
-  constructor(sessionId) {
-    this._sessionId = sessionId;
-    this._requestId = 0;
-    this._eventHandlers = new Map();
-    this.protocol = this._setupProtocol();
-    this._parentSessionId = null;
-    DevToolsAPI._sessions.set(sessionId, this);
-  }
-  async sendCommand(method, params) {
-    var requestId = ++this._requestId;
-    if (this._testRunner._dumpInspectorProtocolMessages)
-      this._testRunner.log(`frontend => backend: ${JSON.stringify({method, params, sessionId: this._sessionId})}`);
-    const result = await DevToolsAPI._sendCommand(this._sessionId, method, params);
-    if (this._testRunner._dumpInspectorProtocolMessages)
-      this._testRunner.log(`backend => frontend: ${JSON.stringify(result)}`);
-    return result;
-  }
-
-  _setupProtocol() {
-    return new Proxy({}, {
-      get: (target, agentName, receiver) => new Proxy({}, {
-        get: (target, methodName, receiver) => {
-          const eventPattern = /^(on(ce)?|off)([A-Z][A-Za-z0-9]*)/;
-          var match = eventPattern.exec(methodName);
-          if (!match)
-            return args => this.sendCommand(
-                       `${agentName}.${methodName}`, args || {});
-          var eventName = match[3];
-          eventName = eventName.charAt(0).toLowerCase() + eventName.slice(1);
-          if (match[1] === 'once')
-            return eventMatcher => this._waitForEvent(
-                       `${agentName}.${eventName}`, eventMatcher);
-          if (match[1] === 'off')
-            return listener => this._removeEventHandler(
-                       `${agentName}.${eventName}`, listener);
-          return listener => this._addEventHandler(
-                     `${agentName}.${eventName}`, listener);
-        }
-      })
-    });
-  }
-
-  _addEventHandler(eventName, handler) {
-    var handlers = this._eventHandlers.get(eventName) || [];
-    handlers.push(handler);
-    this._eventHandlers.set(eventName, handlers);
-  }
-
-  _removeEventHandler(eventName, handler) {
-    var handlers = this._eventHandlers.get(eventName) || [];
-    var index = handlers.indexOf(handler);
-    if (index === -1)
-      return;
-    handlers.splice(index, 1);
-    this._eventHandlers.set(eventName, handlers);
-  }
-
-  _waitForEvent(eventName, eventMatcher) {
-    return new Promise(callback => {
-      var handler = result => {
-        if (eventMatcher && !eventMatcher(result))
-          return;
-        this._removeEventHandler(eventName, handler);
-        callback(result);
-      };
-      this._addEventHandler(eventName, handler);
-    });
-  }
-};
-
-var DevToolsAPI = {};
-DevToolsAPI._requestId = 0;
-DevToolsAPI._embedderMessageId = 0;
-DevToolsAPI._dispatchTable = new Map();
-DevToolsAPI._sessions = new Map();
-DevToolsAPI._outputElement = null;
-
-DevToolsAPI._log = function(text) {
-  if (!DevToolsAPI._outputElement) {
-    var intermediate = document.createElement('div');
-    document.body.appendChild(intermediate);
-    var intermediate2 = document.createElement('div');
-    intermediate.appendChild(intermediate2);
-    DevToolsAPI._outputElement = document.createElement('div');
-    DevToolsAPI._outputElement.className = 'output';
-    DevToolsAPI._outputElement.id = 'output';
-    DevToolsAPI._outputElement.style.whiteSpace = 'pre';
-    intermediate2.appendChild(DevToolsAPI._outputElement);
-  }
-  DevToolsAPI._outputElement.appendChild(document.createTextNode(text));
-  DevToolsAPI._outputElement.appendChild(document.createElement('br'));
-};
-
-DevToolsAPI._completeTest = function() {
-  testRunner.notifyDone();
-};
-
-DevToolsAPI._die = function(message, error) {
-  DevToolsAPI._log(`${message}: ${error}\n${error.stack}`);
-  DevToolsAPI._completeTest();
-  throw new Error();
-};
-
-DevToolsAPI.dispatchMessage = function(messageOrObject) {
-  var messageObject = (typeof messageOrObject === 'string' ? JSON.parse(messageOrObject) : messageOrObject);
-  var messageId = messageObject.id;
-  try {
-    if (typeof messageId === 'number') {
-      var handler = DevToolsAPI._dispatchTable.get(messageId);
-      if (handler) {
-        DevToolsAPI._dispatchTable.delete(messageId);
-        handler(messageObject);
-      } else {
-        DevToolsAPI._die(`Unexpected result id ${messageId}`);
-      }
-    } else {
-      var session = DevToolsAPI._sessions.get(messageObject.sessionId || '');
-      if (session)
-        session._dispatchMessage(messageObject);
-    }
-  } catch(e) {
-    DevToolsAPI._die(`Exception when dispatching message\n${JSON.stringify(messageObject)}`, e);
-  }
-};
-
-DevToolsAPI._sendCommand = function(sessionId, method, params) {
-  var requestId = ++DevToolsAPI._requestId;
-  var messageObject = {'id': requestId, 'method': method, 'params': params};
-  if (sessionId)
-    messageObject.sessionId = sessionId;
-  var embedderMessage = {'id': ++DevToolsAPI._embedderMessageId, 'method': 'dispatchProtocolMessage', 'params': [JSON.stringify(messageObject)]};
-  DevToolsHost.sendMessageToEmbedder(JSON.stringify(embedderMessage));
-  return new Promise(f => DevToolsAPI._dispatchTable.set(requestId, f));
-};
-
-DevToolsAPI._sendCommandOrDie = function(sessionId, method, params) {
-  return DevToolsAPI._sendCommand(sessionId, method, params).then(message => {
-    if (message.error)
-      DevToolsAPI._die('Error communicating with harness', new Error(JSON.stringify(message.error)));
-    return message.result;
-  });
-};
-
-DevToolsAPI._fetch = function(url) {
-  return new Promise(fulfill => {
-    var xhr = new XMLHttpRequest();
-    xhr.open('GET', url, true);
-    xhr.onreadystatechange = e => {
-      if (xhr.readyState !== XMLHttpRequest.DONE)
-        return;
-      if ([0, 200, 304].indexOf(xhr.status) === -1)  // Testing harness file:/// results in 0.
-        DevToolsAPI._die(`${xhr.status} while fetching ${url}`, new Error());
-      else
-        fulfill(e.target.response);
-    };
-    xhr.send(null);
-  });
-};
-'''
-        js_classes_result = self.devtools_client._session_manager.execute("Runtime", "evaluate", {
-            "expression": setup_protocol, "userGesture": False, "returnByValue":True, "awaitPromise": True
-        })
-
-        # setup_protocol = ''
-        # with open('/home/heday/Projects/scivisum/browser-debugger-tools/tests/e2etests/testsite/templates/inspector-protocol-test.js', 'r') as file:
-        #     setup_protocol = file.read()
-        # js_classes_result = self.devtools_client._session_manager.execute("Runtime", "evaluate", {
-        #     "expression": setup_protocol, "userGesture": False, "returnByValue":True, "awaitPromise": True
-        # })
-
+        event = self._get_attached_event()
+        print(event)
+        sessionId = event["sessionId"]
+        
         linkSelectors = [
             'body > a[rel]',
             'body > a:not([rel])',
         ]
-        targetsList = self.devtools_client.execute("Target", "getTargets", {})
+        main_ws = self.devtools_client._session_manager._message_producer.ws
         for selector in linkSelectors:
             print("Clicking on " + selector)
         
             click_result = self.devtools_client._session_manager.execute("Runtime", "evaluate", {
             "expression": "document.querySelector('%s').click();" % selector, "userGesture": True, "returnByValue":True, "awaitPromise": True
             })
-
-
-            js_promise_result = self.devtools_client._session_manager.execute("Runtime", "evaluate", {
-            "expression": """  const myFunction = async function(dp) {
-                               
-                               await Promise.all([
-                               dp.Emulation.setUserAgentOverride({ userAgent: 'Overridden value '}),
-                               dp.Page.enable(),
-                               dp.Page.setLifecycleEventsEnabled({enabled: true}),
-                               dp.Page.onceLifecycleEvent(event => event.params.name === 'load'),
-                               dp.Runtime.runIfWaitingForDebugger(),
-                               ]);}
-                               const popupSession = new Session(this, '%s');
-                               const dp = popupSession.protocol;
-                               myFunction(dp);""" % sessionId, "userGesture": False, "returnByValue":True, "awaitPromise": True})
-
-            # self.devtools_client.execute("Emulation", "setUserAgentOverride", {"userAgent": "anotherUserAgent"})
-            # self.devtools_client.execute("Page", "enable",{})
-            # self.devtools_client.execute("Page","setLifecycleEventsEnabled", {"enabled": True})
-            # self.devtools_client.execute("Runtime", "runIfWaitingForDebugger",{} )
-            print("clicked.")
-            # while len(response) == 0:
-            response = self._get_responses_received()
-
-            targetsList = self.devtools_client.execute("Target", "getTargets", {})
-            # self.assertIn('Your user agent is: <span id="ua" style="font-weight: bold">Test</span>.', self.devtools_client.get_page_source())
-
-        
-        # wait for the new tab to appear
-        time.sleep(2)
-        self.assertIn('Your user agent is: <span id="ua" style="font-weight: bold">anotherUserAgent</span>.', self.devtools_client.get_page_source())
+            # replace ws to the one connected to the new tab
+            ws = self.get_websocket()
+            self.devtools_client._session_manager._message_producer.ws = ws
+            self.devtools_client.execute("Emulation", "setUserAgentOverride", {"userAgent": "Test"})
+            self.assertIn('Chrome', self.devtools_client.get_page_source())
