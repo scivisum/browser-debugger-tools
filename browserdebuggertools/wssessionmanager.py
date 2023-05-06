@@ -144,7 +144,7 @@ class _WSMessageProducer(Thread):
                 self._empty_send_queue()
                 self._empty_websocket()
                 self.poll_signal.wait(self._POLL_INTERVAL)
-                if self.poll_signal.isSet():
+                if self.poll_signal.is_set():
                     self.poll_signal.clear()
 
     @property
