@@ -1,6 +1,6 @@
 from unittest import TestCase
 
-from mock import patch, MagicMock, call
+from unittest.mock import patch, MagicMock, call
 
 from browserdebuggertools.chrome.interface import ChromeInterface, _DOMManager
 from browserdebuggertools.exceptions import ResourceNotFoundError

@@ -4,7 +4,7 @@ import os
 from unittest import TestCase
 from base64 import b64encode
 
-from mock import MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 from browserdebuggertools.chrome.interface import ChromeInterface
 from browserdebuggertools.exceptions import DevToolsTimeoutException

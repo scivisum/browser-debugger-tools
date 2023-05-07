@@ -1,6 +1,6 @@
 from unittest import TestCase
 
-from mock import MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 from browserdebuggertools.eventhandlers import PageLoadEventHandler, JavascriptDialogEventHandler
 from browserdebuggertools.exceptions import DomainNotEnabledError, JavascriptDialogNotFoundError

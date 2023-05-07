@@ -1,6 +1,6 @@
 from unittest import TestCase
 
-from mock import MagicMock
+from unittest.mock import MagicMock
 
 from browserdebuggertools.exceptions import DevToolsException
 from browserdebuggertools.models import JavascriptDialog
