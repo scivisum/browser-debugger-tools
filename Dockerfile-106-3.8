@@ -1,0 +1,10 @@
+FROM matseymour/chrome-python:106.0.5249.61-3.8.16
+ENV PYTHONUNBUFFERED 1
+
+RUN mkdir /code
+RUN mkdir /code/tests
+RUN mkdir /code/browserdebuggertools
+COPY dev_requirements.txt /code
+RUN pip install -r /code/dev_requirements.txt
+
+WORKDIR /code/tests
