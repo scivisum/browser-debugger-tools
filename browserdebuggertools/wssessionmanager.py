@@ -6,7 +6,7 @@ import time
 import collections
 from threading import Thread, Lock, Event
 
-from typing import Dict
+from typing import Dict, Callable
 
 import requests
 import websocket
@@ -15,11 +15,22 @@ from browserdebuggertools.eventhandlers import (
     EventHandler, PageLoadEventHandler, JavascriptDialogEventHandler
 )
 from browserdebuggertools.exceptions import (
-    DevToolsException, TabNotFoundError, MaxRetriesException,
+    DevToolsException, MaxRetriesException,
     DevToolsTimeoutException, DomainNotEnabledError,
     MethodNotFoundError, UnknownError, ResourceNotFoundError, MessagingThreadIsDeadError,
     InvalidParametersError, WebSocketBlockedException
 )
+
+
+def _unwrap_json_response(request: Callable) -> Callable:
+    def _make_request_and_check_response(*args, **kwargs) -> dict:
+        response = request(*args, **kwargs)
+        if not response.ok:
+            raise DevToolsException("{} {} for url: {}".format(
+                response.status_code, response.reason, response.url)
+            )
+        return response.json()
+    return _make_request_and_check_response
 
 
 class _WSMessageProducer(Thread):
@@ -46,22 +57,31 @@ class _WSMessageProducer(Thread):
     def __del__(self):
         self.close()
 
-    def _get_websocket_url(self, port):
-        response = requests.get(
-            "http://localhost:{}/json".format(port), timeout=self._CONN_TIMEOUT
-        )
-        if not response.ok:
-            raise DevToolsException("{} {} for url: {}".format(
-                response.status_code, response.reason, response.url)
-            )
+    def _get_websocket_url(self) -> str:
+        """
+        Return debugging url for the first tab, if there is one, otherwise create a tab and return its debugging url
+        :return: The WS end-point that can be used for devtools protocol communication
+        """
+        tabs = [target for target in self._get_targets() if target["type"] == "page"]
+        if tabs:
+            return tabs[0]["webSocketDebuggerUrl"]
+        else:
+            return self._create_tab()["webSocketDebuggerUrl"]
 
-        tabs = [target for target in response.json() if target["type"] == "page"]
-        if not tabs:
-            raise TabNotFoundError("There is no tab to connect to.")
-        return tabs[0]["webSocketDebuggerUrl"]
+    @_unwrap_json_response
+    def _get_targets(self):
+        return requests.get(
+            "http://localhost:{}/json".format(self._port), timeout=self._CONN_TIMEOUT
+        )
+
+    @_unwrap_json_response
+    def _create_tab(self):
+        return requests.put(
+            "http://localhost:{}/json/new".format(self._port), timeout=self._CONN_TIMEOUT
+        )
 
     def _get_websocket(self):
-        websocket_url = self._get_websocket_url(self._port)
+        websocket_url = self._get_websocket_url()
         logging.info("Connecting to websocket %s" % websocket_url)
         ws = websocket.create_connection(
             websocket_url, timeout=self._CONN_TIMEOUT
@@ -124,7 +144,7 @@ class _WSMessageProducer(Thread):
                 self._empty_send_queue()
                 self._empty_websocket()
                 self.poll_signal.wait(self._POLL_INTERVAL)
-                if self.poll_signal.isSet():
+                if self.poll_signal.is_set():
                     self.poll_signal.clear()
 
     @property

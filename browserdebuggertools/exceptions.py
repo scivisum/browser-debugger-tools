@@ -17,10 +17,6 @@ class DevToolsTimeoutException(DevToolsException):
     pass
 
 
-class TabNotFoundError(NotFoundError):
-    pass
-
-
 class DomainNotEnabledError(DevToolsException):
     pass
 

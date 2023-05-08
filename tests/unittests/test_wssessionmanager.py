@@ -3,12 +3,12 @@ import copy
 import socket
 import time
 from unittest import TestCase
+from unittest.mock import patch, MagicMock, call, PropertyMock
 
-from mock import patch, MagicMock, call, PropertyMock
 from websocket import WebSocketConnectionClosedException
 
 from browserdebuggertools.exceptions import (
-    DevToolsException, TabNotFoundError,
+    DevToolsException,
     DomainNotEnabledError, DevToolsTimeoutException, MethodNotFoundError,
     InvalidParametersError, WebSocketBlockedException, MessagingThreadIsDeadError,
     MaxRetriesException
@@ -48,35 +48,97 @@ class SessionManagerTest(TestCase):
         self.session_manager = self._NoWSSessionManager(1234, 30)
 
 
-@patch(MODULE_PATH + "requests")
-@patch(MODULE_PATH + "websocket", MagicMock())
 class Test___WSMessageProducer__get_websocket_url(WSMessageProducerTest):
 
-    def test(self, requests):
-        mock_websocket_url = "ws://localhost:1234/devtools/page/test"
-        requests.get().json.return_value = [{
+    def setUp(self):
+        super().setUp()
+        self.messaging_thread._get_targets = MagicMock()
+        self.messaging_thread._create_tab = MagicMock()
+        self.mock_websocket_url = "ws://localhost:1234/devtools/page/test"
+
+    def test_existing_targets(self):
+        self.messaging_thread._get_targets.return_value = [
+            {
+                "type": "extension",
+                "webSocketDebuggerUrl": "chrome://foo"
+            },
+            {
+                "type": "page",
+                "webSocketDebuggerUrl": self.mock_websocket_url
+            },
+            {
+                "type": "page",
+                "webSocketDebuggerUrl": "ws://bar"
+            },
+        ]
+
+        websocket_url = self.messaging_thread._get_websocket_url()
+
+        self.assertEqual(self.mock_websocket_url, websocket_url)
+        self.messaging_thread._create_tab.assert_not_called()
+
+    def test_create_tab(self):
+        self.messaging_thread._get_targets.return_value = []
+        self.messaging_thread._create_tab.return_value = {
             "type": "page",
-            "webSocketDebuggerUrl": mock_websocket_url
-        }]
+            "webSocketDebuggerUrl": self.mock_websocket_url
+        }
 
-        websocket_url = self.messaging_thread._get_websocket_url(1234)
+        websocket_url = self.messaging_thread._get_websocket_url()
 
-        self.assertEqual(mock_websocket_url, websocket_url)
+        self.messaging_thread._get_targets.assert_called_once_with()
+        self.messaging_thread._create_tab.assert_called_once_with()
+        self.assertEqual(self.mock_websocket_url, websocket_url)
 
-    def test_invalid_port(self, requests):
-        requests.get().ok.return_value = False
+
+@patch(MODULE_PATH + "requests")
+class Test___WSMessageProducer__get_targets(WSMessageProducerTest):
+
+    def test_ok(self, requests):
+        expected = [
+            {
+                "type": "extension",
+                "webSocketDebuggerUrl": "chrome://foo"
+            },
+            {
+                "type": "page",
+                "webSocketDebuggerUrl": "ws://localhost:1234/devtools/page/test"
+            }
+        ]
+        requests.get.return_value.ok = True
+        requests.get.return_value.json.return_value = expected
+
+        self.assertEqual(
+            expected, self.messaging_thread._get_targets()
+        )
+
+    def test_not_ok_response(self, requests):
+        requests.get.return_value.ok = False
 
         with self.assertRaises(DevToolsException):
-            self.messaging_thread._get_websocket_url(1234)
+            self.messaging_thread._get_targets()
 
-    def test_no_tabs(self, requests):
-        requests.get().json.return_value = [{
-            "type": "iframe",
+
+@patch(MODULE_PATH + "requests")
+class Test___WSMessageProducer__create_tab(WSMessageProducerTest):
+
+    def test_ok(self, requests):
+        expected = {
+            "type": "page",
             "webSocketDebuggerUrl": "ws://localhost:1234/devtools/page/test"
-        }]
+        }
+        requests.put.return_value.ok = True
+        requests.put.return_value.json.return_value = expected
 
-        with self.assertRaises(TabNotFoundError):
-            self.messaging_thread._get_websocket_url(1234)
+        self.assertEqual(
+            expected, self.messaging_thread._create_tab()
+        )
+
+    def test_not_ok_response(self, requests):
+        requests.put.return_value.ok = False
+
+        with self.assertRaises(DevToolsException):
+            self.messaging_thread._create_tab()
 
 
 class Test__WSMessageProducer__empty_send_queue(WSMessageProducerTest):

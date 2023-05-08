@@ -2,10 +2,10 @@ import json
 import socket
 import time
 from unittest import TestCase
+from unittest.mock import MagicMock, patch
 from multiprocessing.pool import ThreadPool
 
 import websocket
-from mock import MagicMock, patch
 
 from browserdebuggertools.exceptions import DevToolsTimeoutException, MaxRetriesException
 from browserdebuggertools.wssessionmanager import (
