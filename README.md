@@ -1,5 +1,5 @@
 # browser-debugger-tools
-[![Build Status](https://img.shields.io/travis/scivisum/browser-debugger-tools/master.svg?style=flat-square)](https://travis-ci.org/scivisum/browser-debugger-tools)
+[![CirclCI](https://circleci.com/gh/scivisum/browser-debugger-tools.svg?style=svg)](https://app.circleci.com/pipelines/github/scivisum/browser-debugger-tools?branch=master)
 [![PyPI](https://img.shields.io/pypi/v/browserdebuggertools.svg?style=flat-square)](https://pypi.python.org/pypi/browserdebuggertools)
 ![Python](https://img.shields.io/pypi/pyversions/browserdebuggertools.svg?style=flat-square)
 ![License](https://img.shields.io/pypi/l/browserdebuggertools.svg?style=flat-square)
