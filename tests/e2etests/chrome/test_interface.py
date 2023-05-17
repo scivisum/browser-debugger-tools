@@ -44,11 +44,12 @@ class ChromeInterfaceTest(ABC, TestCase):
             "--no-default-browser-check",
             "--headless" if cls.headless else "",
             "--user-data-dir=%s" % cls.browser_cache_dir,
-            "--no-first-run",
+            "--no-first-run", "--disable-gpu",
+            "--no-sandbox", "--remote-allow-origins=*"
         ])
 
         start = time.time()
-        while start - time.time() < 30:
+        while time.time() - start < 30:
 
             time.sleep(3)
 
