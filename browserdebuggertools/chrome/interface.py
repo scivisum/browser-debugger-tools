@@ -3,6 +3,7 @@ import logging
 from base64 import b64decode, b64encode
 
 from browserdebuggertools.exceptions import ResourceNotFoundError
+from browserdebuggertools import models
 from browserdebuggertools.wssessionmanager import WSSessionManager
 
 
@@ -20,7 +21,7 @@ class ChromeInterface(object):
             interface.navigate(url="https://github.com/scivisum/browser-debugger-tools")
     """
 
-    def __init__(self, port, timeout=30, domains=None):
+    def __init__(self, port, host="localhost", timeout=30, domains=None):
         """ Initialises the interface starting the websocket connection and enabling
             a series of domains.
 
@@ -30,7 +31,7 @@ class ChromeInterface(object):
         is a dictionary of the arguments passed with the domain upon enabling.
         """
         # type: WSSessionManager
-        self._session_manager = WSSessionManager(port, timeout, domains=domains)
+        self._session_manager = WSSessionManager(port, host, timeout, domains=domains)
         self._dom_manager = _DOMManager(self._session_manager)
 
     def quit(self):
@@ -55,7 +56,7 @@ class ChromeInterface(object):
 
         Usage example:
 
-        self.execute("Network", "Cookies", args={"urls": ["http://www.urls.com/"]})
+        self.execute("Network", "Cookies", args={"urls": ["https://www.urls.com/"]})
 
         https://chromedevtools.github.io/devtools-protocol/tot/Network#method-getCookies
 
@@ -147,7 +148,7 @@ class ChromeInterface(object):
         """
 
         # Note: Currently, there's a bug in the devtools protocol when disabling parameters,
-        # i.e setting download to -1, therefore we enforce that all parameters must be passed with
+        # i.e. setting download to -1, therefore we enforce that all parameters must be passed with
         # a sensible value (bigger than 0)
         assert min(latency, download, upload) > 0 or offline
 
@@ -165,7 +166,7 @@ class ChromeInterface(object):
         Creates a basic type Authorization header from the username and password strings
         and applies it to all requests
         """
-        auth = "Basic " + b64encode("%s:%s" % (username, password))
+        auth = b"Basic " + b64encode("%s:%s" % (username, password))
         self.set_request_headers({"Authorization": auth})
 
     def set_request_headers(self, headers):
@@ -176,7 +177,7 @@ class ChromeInterface(object):
         self.execute("Network", "setExtraHTTPHeaders", {"headers": headers})
 
     def get_opened_javascript_dialog(self):
-        # type: () -> JavascriptDialog
+        # type: () -> models.JavascriptDialog
         """
         Gets the opened javascript dialog.
 
@@ -232,7 +233,7 @@ class _DOMManager(object):
         try:
             return self.get_outer_html(backend_node_id)
         except ResourceNotFoundError:
-            # The cached node doesn't exist any more, so we need to find a new one that matches
+            # The cached node doesn't exist anymore, so we need to find a new one that matches
             # the xpath. Backend node IDs are unique, so there is not a risk of getting the
             # outer html of the wrong node.
             if xpath in self._node_map:

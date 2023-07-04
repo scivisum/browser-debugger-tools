@@ -245,7 +245,7 @@ class ChromeInterfaceSetBasicAuth(ChromeInterfaceTest):
         self.devtools_client.disable_domain("Network")
 
     def test_standard_auth_page(self):
-
+        # noinspection HttpUrlsUsage
         url = "http://username:password@localhost:%s/auth_challenge" % self.testSite.port
         self.devtools_client.navigate(url=url)
         self._assert_dom_complete()
@@ -281,11 +281,15 @@ class ChromeInterfaceConnectionUnexpectedlyDead(ChromeInterfaceTest):
             self.devtools_client.navigate(url=url)
 
 
-class TestChromeInterfaceConnectionUnexpectedlyClosedHeaded(ChromeInterfaceConnectionUnexpectedlyDead):
+class TestChromeInterfaceConnectionUnexpectedlyClosedHeaded(
+    ChromeInterfaceConnectionUnexpectedlyDead
+):
     headless = False
 
 
-class TestChromeInterfaceConnectionUnexpectedlyClosedHeadless(ChromeInterfaceConnectionUnexpectedlyDead):
+class TestChromeInterfaceConnectionUnexpectedlyClosedHeadless(
+    ChromeInterfaceConnectionUnexpectedlyDead
+):
     headless = True
 
 
@@ -310,8 +314,10 @@ class ChromeInterfaceCachePage(ChromeInterfaceTest):
                          "}" \
                          "</script>"
 
-        simple_page_3 = '<html><head></head><body><h1 id="title-text">Simple Page 3</h1>%' \
-                        's</body></html>' % fake_page_load
+        simple_page_3 = (
+            '<html><head></head><body><h1 id="title-text">Simple Page 3</h1>'
+            f'{fake_page_load}</body></html>'
+        )
         fake_page = '<html><head></head><body><h1 id="title-text">Fake Title</h1>' \
                     '%s</body></html>' % fake_page_load
 
@@ -384,31 +390,31 @@ class ChromeInterfaceTestJavascriptDialogs(ChromeInterfaceTest):
         with self.assertRaises(JavascriptDialogNotFoundError):
             self.devtools_client.get_opened_javascript_dialog()
 
-    def check_dialog(self, type, message=None):
-        self.open_dialog(type)
+    def check_dialog(self, dialogType, message=None):
+        self.open_dialog(dialogType)
 
         dialog = self.devtools_client.get_opened_javascript_dialog()
 
         # Check the dialog
         self.assertTrue(dialog)
         self.assertEqual(dialog, self.devtools_client.get_opened_javascript_dialog())
-        self.assertEqual(type, dialog.type)
+        self.assertEqual(dialogType, dialog.type)
         self.assertEqual(message, dialog.message)
         self.assertFalse(dialog.is_handled)
-        if type != JavascriptDialog.PROMPT:
+        if dialogType != JavascriptDialog.PROMPT:
             self.assertFalse(dialog.default_prompt)
         self.assertEqual(self.url, dialog.url)
 
         # Test dismiss
         dialog.dismiss()
 
-        self.open_dialog(type)
+        self.open_dialog(dialogType)
         dialog2 = self.devtools_client.get_opened_javascript_dialog()
 
         # Test not cached
         self.assertTrue(dialog.is_handled)
 
-        # Test accept (putting this last so we don't refresh the page beforehand)
+        # Test accept (putting this last, so we don't refresh the page beforehand)
         dialog2.accept()
 
         # Test handled
@@ -424,11 +430,11 @@ class ChromeInterfaceTestJavascriptDialogs(ChromeInterfaceTest):
         self.check_dialog(JavascriptDialog.CONFIRM, "Do you want to confirm?")
 
     def test_prompt(self):
-        type = JavascriptDialog.PROMPT
-        self.check_dialog(type, "Enter some text")
+        dialogType = JavascriptDialog.PROMPT
+        self.check_dialog(dialogType, "Enter some text")
 
         # Test prompt special interactions
-        self.open_dialog(type)
+        self.open_dialog(dialogType)
 
         dialog = self.devtools_client.get_opened_javascript_dialog()
         self.assertEqual("default text", dialog.default_prompt)
@@ -470,9 +476,11 @@ class ChromeInterfaceTestGetIframeSourceContent(ChromeInterfaceTest):
         self.assertEqual(expected_main_page, actual_main_page)
 
         expected_frame_1 = _cleanupHTML(env.get_template('simple_page.html').render())
-        actual_frame_1 = _cleanupHTML( self.devtools_client.get_iframe_source_content(
-            "//iframe[@id='simple_page_frame']"
-        ))
+        actual_frame_1 = _cleanupHTML(
+            self.devtools_client.get_iframe_source_content(
+                "//iframe[@id='simple_page_frame']"
+            )
+        )
         self.assertEqual(expected_frame_1, actual_frame_1)
 
         # Check that we don't fail using invalid backend node id cache
@@ -503,11 +511,15 @@ class ChromeInterfaceTestGetIframeSourceContent(ChromeInterfaceTest):
             self.devtools_client.get_iframe_source_content("//div")
 
 
-class TestChromeInterfaceTestGetIframeSourceContentHeaded(ChromeInterfaceTestGetIframeSourceContent):
+class TestChromeInterfaceTestGetIframeSourceContentHeaded(
+    ChromeInterfaceTestGetIframeSourceContent
+):
     headless = False
 
 
-class TestChromeInterfaceTestGetIframeSourceContentHeadless(ChromeInterfaceTestGetIframeSourceContent):
+class TestChromeInterfaceTestGetIframeSourceContentHeadless(
+    ChromeInterfaceTestGetIframeSourceContent
+):
     headless = True
 
 

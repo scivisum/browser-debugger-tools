@@ -61,7 +61,7 @@ class Test_WSSessionManager__execute(TestCase):
     def tearDown(self):
         self.pool.close()
 
-    def continually_send(self, key):
+    def continually_send(self, _key):
         for i in range(500):
             self.session_manager._execute("foo", "bar")
 
@@ -92,7 +92,7 @@ class Test_WSSessionManager_get_events(TestCase):
         with patch.object(
             _WSMessageProducer, "_get_websocket", new=MagicMock(return_value=self.ws)
         ):
-            self.session_manager = WSSessionManager(1234, 1, {"Network": {}})
+            self.session_manager = WSSessionManager(1234, "localhost", 1, domains={"Network": {}})
 
             events = list(reversed(self.session_manager.get_events("Network", clear=True)))
 
@@ -119,16 +119,18 @@ class Test_WSSessionManager_wait_for_result(TestCase):
 
         with patch.object(_WSMessageProducer, "_get_websocket",
                           new=MagicMock(return_value=_DummyWebsocket())):
-            self.session_manager = WSSessionManager(1234, 1)
+            self.session_manager = WSSessionManager(1234, "localhost", 1)
 
             with self.assertRaises(DevToolsTimeoutException):
                 self.session_manager._wait_for_result(99)
 
     def test_message_spamming_with_result_timeout(self):
 
-        with patch.object(_WSMessageProducer, "_get_websocket",
-                          new=MagicMock(return_value=_DummyWebsocket())):
-            self.session_manager = WSSessionManager(1234, 1)
+        with patch.object(
+            _WSMessageProducer, "_get_websocket",
+            new=MagicMock(return_value=_DummyWebsocket())
+        ):
+            self.session_manager = WSSessionManager(1234, "localhost", 1)
 
             with self.assertRaises(DevToolsTimeoutException):
                 self.session_manager._message_producer.ws.set_recv_message(
@@ -188,7 +190,8 @@ class ExceptionThrowingWS(_DummyWebsocket):
 
 class Test_WSSessionManager_execute(TestCase):
 
-    def resetWS(self):
+    @staticmethod
+    def resetWS():
         """ flush_messages runs async so we only want the socket to start blocking when we're
             ready
         """
@@ -210,7 +213,7 @@ class Test_WSSessionManager_execute(TestCase):
         with patch.object(_WSMessageProducer, "_get_websocket",
                           new=MagicMock(return_value=BlockingWS(times_to_block=1))):
 
-            self.session_manager = WSSessionManager(1234, 30)
+            self.session_manager = WSSessionManager(1234, "localhost", 30)
 
             start = time.time()
             self.session_manager.execute("Network", "enable")
@@ -224,7 +227,7 @@ class Test_WSSessionManager_execute(TestCase):
         with patch.object(_WSMessageProducer, "_get_websocket",
                           new=MagicMock(return_value=BlockingWS(times_to_block=2))):
 
-            self.session_manager = WSSessionManager(1234, 30)
+            self.session_manager = WSSessionManager(1234, "localhost", 30)
             self.resetWS()
             start = time.time()
             self.session_manager.execute("Network", "enable")
@@ -236,7 +239,7 @@ class Test_WSSessionManager_execute(TestCase):
         with patch.object(_WSMessageProducer, "_get_websocket",
                           new=MagicMock(return_value=TimeoutBlockingWS())):
 
-            self.session_manager = WSSessionManager(1234, 3)
+            self.session_manager = WSSessionManager(1234, "localhost", 3)
             self.resetWS()
             with self.assertRaises(DevToolsTimeoutException):
                 start = time.time()
@@ -248,7 +251,7 @@ class Test_WSSessionManager_execute(TestCase):
         with patch.object(_WSMessageProducer, "_get_websocket",
                           new=MagicMock(return_value=BlockingWS(times_to_block=4))):
 
-            self.session_manager = WSSessionManager(1234, 60)
+            self.session_manager = WSSessionManager(1234, "localhost", 60)
             self.resetWS()
             start = time.time()
             with self.assertRaises(MaxRetriesException):
@@ -261,7 +264,7 @@ class Test_WSSessionManager_execute(TestCase):
         with patch.object(_WSMessageProducer, "_get_websocket",
                           new=MagicMock(return_value=ExceptionThrowingWS())):
 
-            self.session_manager = WSSessionManager(1234, 60)
+            self.session_manager = WSSessionManager(1234, "localhost", 60)
             self.resetWS()
             start = time.time()
             self.session_manager.execute("Network", "enable")
@@ -272,7 +275,7 @@ class Test_WSSessionManager_execute(TestCase):
         with patch.object(_WSMessageProducer, "_get_websocket",
                           new=MagicMock(return_value=ExceptionThrowingWS(times_to_except=2))):
 
-            self.session_manager = WSSessionManager(1234, 30)
+            self.session_manager = WSSessionManager(1234, "localhost", 30)
             self.resetWS()
             start = time.time()
             self.session_manager.execute("Network", "enable")
@@ -283,7 +286,7 @@ class Test_WSSessionManager_execute(TestCase):
         with patch.object(_WSMessageProducer, "_get_websocket",
                           new=MagicMock(return_value=ExceptionThrowingWS(times_to_except=4))):
 
-            self.session_manager = WSSessionManager(1234, 30)
+            self.session_manager = WSSessionManager(1234, "localhost", 30)
 
             self.resetWS()
             start = time.time()
