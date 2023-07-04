@@ -41,9 +41,10 @@ class _WSMessageProducer(Thread):
     _BLOCKED_TIMEOUT = 5
     _POLL_INTERVAL = 1  # How long to wait for new ws messages
 
-    def __init__(self, port, send_queue, on_message):
+    def __init__(self, port, host, send_queue, on_message):
         super(_WSMessageProducer, self).__init__()
         self._port = port
+        self._host = host
         self._send_queue = send_queue
         self._on_message = on_message
         self._last_ws_attempt = None
@@ -71,13 +72,13 @@ class _WSMessageProducer(Thread):
     @_unwrap_json_response
     def _get_targets(self):
         return requests.get(
-            "http://localhost:{}/json".format(self._port), timeout=self._CONN_TIMEOUT
+            f"http://{self._host}:{self._port}/json", timeout=self._CONN_TIMEOUT
         )
 
     @_unwrap_json_response
     def _create_tab(self):
         return requests.put(
-            "http://localhost:{}/json/new".format(self._port), timeout=self._CONN_TIMEOUT
+            f"http://{self._host}:{self._port}/json/new", timeout=self._CONN_TIMEOUT
         )
 
     def _get_websocket(self):
@@ -183,7 +184,7 @@ class _WSMessageProducer(Thread):
                 raise MessagingThreadIsDeadError("WS messaging thread died for an unknown reason")
 
 
-class _Timer(object):
+class _Timer:
 
     def __init__(self, timeout):
         """
@@ -200,12 +201,12 @@ class _Timer(object):
         return (time.time() - self.start) > self.timeout
 
 
-class WSSessionManager(object):
+class WSSessionManager:
 
     MAX_RETRY_THREADS = 3
     RETRY_COUNT_TIMEOUT = 300  # Seconds
 
-    def __init__(self, port, timeout, domains=None):
+    def __init__(self, port, host, timeout, domains=None):
 
         self.timeout = timeout
 
@@ -238,6 +239,7 @@ class WSSessionManager(object):
         self._send_queue = collections.deque()
 
         self.port = port
+        self.host = host
         self._message_producer = None
 
         self._setup_ws_session()
@@ -275,7 +277,7 @@ class WSSessionManager(object):
     def _setup_ws_session(self):
 
         self._message_producer = _WSMessageProducer(
-            self.port, self._send_queue, self._process_message
+            self.port, self.host, self._send_queue, self._process_message
         )
         self._message_producer.start()
 
@@ -430,6 +432,6 @@ class WSSessionManager(object):
         self._remove_domain(domain_name)
         result = self.execute(domain_name, "disable", {})
         if "error" in result:
-            logging.warn("Domain \"{}\" doesn't exist".format(domain_name))
+            logging.warning("Domain \"{}\" doesn't exist".format(domain_name))
         else:
             logging.info("Domain {} has been disabled".format(domain_name))
