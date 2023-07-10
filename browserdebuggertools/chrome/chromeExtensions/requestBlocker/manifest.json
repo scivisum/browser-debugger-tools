@@ -1,0 +1,29 @@
+{
+  "manifest_version": 3,
+  "name": "Request Blocker",
+  "description": "Request Blocker",
+  "version": "1.0",
+  "permissions": [
+    "declarativeNetRequest"
+  ],
+ "declarative_net_request" : {
+    "rule_resources" : [{
+      "id": "blockMainFrames",
+      "enabled": false,
+      "path": "ruleset.json"
+    }]
+  },
+  "host_permissions": ["<all_urls>"],
+  "background": {
+    "service_worker": "requestBlocker.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["contentScript.js"]
+    }
+  ],
+  "externally_connectable": {
+    "matches": ["*://*/*"]
+  }
+}
