@@ -8,8 +8,8 @@ from multiprocessing.pool import ThreadPool
 import websocket
 
 from browserdebuggertools.exceptions import DevToolsTimeoutException, MaxRetriesException
-from browserdebuggertools.wssessionmanager import (
-    WSSessionManager, _WSMessageProducer
+from browserdebuggertools.targetsmanager import (
+    _WSSessionManager, _WSMessageProducer
 )
 
 MODULE_PATH = "browserdebuggertools.WSSessionManager."
@@ -69,7 +69,7 @@ class Test_WSSessionManager__execute(TestCase):
         with patch.object(
             _WSMessageProducer, "_get_websocket", new=MagicMock(return_value=_DummyWebsocket())
         ):
-            self.session_manager = WSSessionManager(1234, 1, {"Network": {}})
+            self.session_manager = _WSSessionManager("ws://foo:8988", 1, {"Network": {}})
             self.ids = []
 
             def _send(message):
@@ -92,7 +92,7 @@ class Test_WSSessionManager_get_events(TestCase):
         with patch.object(
             _WSMessageProducer, "_get_websocket", new=MagicMock(return_value=self.ws)
         ):
-            self.session_manager = WSSessionManager(1234, "localhost", 1, domains={"Network": {}})
+            self.session_manager = _WSSessionManager("ws://foo:8988", 1, domains={"Network": {}})
 
             events = list(reversed(self.session_manager.get_events("Network", clear=True)))
 
@@ -119,7 +119,7 @@ class Test_WSSessionManager_wait_for_result(TestCase):
 
         with patch.object(_WSMessageProducer, "_get_websocket",
                           new=MagicMock(return_value=_DummyWebsocket())):
-            self.session_manager = WSSessionManager(1234, "localhost", 1)
+            self.session_manager = _WSSessionManager("ws://foo:8988", 1)
 
             with self.assertRaises(DevToolsTimeoutException):
                 self.session_manager._wait_for_result(99)
@@ -130,7 +130,7 @@ class Test_WSSessionManager_wait_for_result(TestCase):
             _WSMessageProducer, "_get_websocket",
             new=MagicMock(return_value=_DummyWebsocket())
         ):
-            self.session_manager = WSSessionManager(1234, "localhost", 1)
+            self.session_manager = _WSSessionManager("ws://foo:8988", 1)
 
             with self.assertRaises(DevToolsTimeoutException):
                 self.session_manager._message_producer.ws.set_recv_message(
@@ -203,8 +203,8 @@ class Test_WSSessionManager_blocked_with_domains(TestCase):
             new=MagicMock(return_value=_DummyWebsocket())
         ):
 
-            self.session_manager = WSSessionManager(
-                1234, "localhost", 2, domains={"Network": {}}
+            self.session_manager = _WSSessionManager(
+                "ws://localhost:2", 1234, domains={"Network": {}}
             )
             # The first message producer and web socket are clocked.
             # When the ws session is recreated we get a new one which won't be blocked.
@@ -238,7 +238,7 @@ class Test_WSSessionManager_execute(TestCase):
         with patch.object(_WSMessageProducer, "_get_websocket",
                           new=MagicMock(return_value=BlockingWS(times_to_block=1))):
 
-            self.session_manager = WSSessionManager(1234, "localhost", 30)
+            self.session_manager = _WSSessionManager("ws://foo:8988", 30)
 
             start = time.time()
             self.session_manager.execute("Network", "enable")
@@ -253,7 +253,7 @@ class Test_WSSessionManager_execute(TestCase):
         with patch.object(_WSMessageProducer, "_get_websocket",
                           new=MagicMock(return_value=BlockingWS(times_to_block=2))):
 
-            self.session_manager = WSSessionManager(1234, "localhost", 30)
+            self.session_manager = _WSSessionManager("ws://foo:8988", 30)
             self.resetWS()
             start = time.time()
             self.session_manager.execute("Network", "enable")
@@ -265,7 +265,7 @@ class Test_WSSessionManager_execute(TestCase):
         with patch.object(_WSMessageProducer, "_get_websocket",
                           new=MagicMock(return_value=TimeoutBlockingWS())):
 
-            self.session_manager = WSSessionManager(1234, "localhost", 3)
+            self.session_manager = _WSSessionManager("ws://foo:8988", 3)
             self.resetWS()
             start = time.time()
             with self.assertRaises(DevToolsTimeoutException):
@@ -277,7 +277,7 @@ class Test_WSSessionManager_execute(TestCase):
         with patch.object(_WSMessageProducer, "_get_websocket",
                           new=MagicMock(return_value=BlockingWS(times_to_block=4))):
 
-            self.session_manager = WSSessionManager(1234, "localhost", 60)
+            self.session_manager = _WSSessionManager("ws://foo:8988", 60)
             self.resetWS()
             start = time.time()
             with self.assertRaises(MaxRetriesException):
@@ -290,7 +290,7 @@ class Test_WSSessionManager_execute(TestCase):
         with patch.object(_WSMessageProducer, "_get_websocket",
                           new=MagicMock(return_value=ExceptionThrowingWS())):
 
-            self.session_manager = WSSessionManager(1234, "localhost", 60)
+            self.session_manager = _WSSessionManager("ws://foo:8988", 60)
             self.resetWS()
             start = time.time()
             self.session_manager.execute("Network", "enable")
@@ -301,7 +301,7 @@ class Test_WSSessionManager_execute(TestCase):
         with patch.object(_WSMessageProducer, "_get_websocket",
                           new=MagicMock(return_value=ExceptionThrowingWS(times_to_except=2))):
 
-            self.session_manager = WSSessionManager(1234, "localhost", 30)
+            self.session_manager = _WSSessionManager("ws://foo:8988", 30)
             self.resetWS()
             start = time.time()
             self.session_manager.execute("Network", "enable")
@@ -312,7 +312,7 @@ class Test_WSSessionManager_execute(TestCase):
         with patch.object(_WSMessageProducer, "_get_websocket",
                           new=MagicMock(return_value=ExceptionThrowingWS(times_to_except=4))):
 
-            self.session_manager = WSSessionManager(1234, "localhost", 30)
+            self.session_manager = _WSSessionManager("ws://foo:8988", 30)
 
             self.resetWS()
             start = time.time()

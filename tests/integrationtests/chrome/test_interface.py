@@ -8,8 +8,8 @@ from unittest.mock import MagicMock, patch
 
 from browserdebuggertools.chrome.interface import ChromeInterface
 from browserdebuggertools.exceptions import DevToolsTimeoutException
-from browserdebuggertools.wssessionmanager import _WSMessageProducer
-from tests.integrationtests.test_wssessionmanager import _DummyWebsocket
+from browserdebuggertools.targetsmanager import _WSMessageProducer, _Target, TargetsManager
+from tests.integrationtests.test_targetsmanager import _DummyWebsocket
 
 MODULE_PATH = "browserdebuggertools.chrome.interface."
 
@@ -29,7 +29,17 @@ class ChromeInterfaceTest(TestCase):
         with patch.object(
             _WSMessageProducer, "_get_websocket", new=MagicMock(return_value=self.WEBSOCKET_CLS())
         ):
-            self.interface = ChromeInterface(1234)
+            from browserdebuggertools.targetsmanager import requests
+            get = MagicMock()
+            get.return_value.json.return_value = [{
+                "id": "abc123",
+                "webSocketDebuggerUrl": "ws://localhost:1234",
+                "type": "page"
+            }]
+            with patch.object(
+                    requests, "get", new=get
+            ):
+                self.interface = ChromeInterface(1234)
 
 
 @patch(MODULE_PATH + "ChromeInterface.execute")
@@ -71,39 +81,43 @@ class Test_ChromeInterface_set_timeout(ChromeInterfaceTest):
 
 class Test_ChromeInterface_get_url(ChromeInterfaceTest):
 
+    @property
+    def _wsm(self):
+        return self.interface._targets_manager.current_target.wsm
+
     def load_pages(self, count):
         mock_message = json.dumps({"method": "Page.domContentEventFired"})
         for _ in range(count):
-            self.interface._session_manager._message_producer.ws.queue.append(mock_message)
+            self._wsm._message_producer.ws.queue.append(mock_message)
 
     def load_js_pages(self, count):
         mock_message = json.dumps({"method": "Page.navigatedWithinDocument", "params": {"url": ""}})
 
         for _ in range(count):
-            self.interface._session_manager._message_producer.ws.queue.append(mock_message)
+            self._wsm._message_producer.ws.queue.append(mock_message)
 
     def test_page_enabled_cache(self):
-        self.interface._session_manager._domains["Page"] = {}
-        self.interface._session_manager._events["Page"] = []
-        self.interface._session_manager._recv = MagicMock(return_value=None)
-        self.interface._session_manager.execute = MagicMock()
+        self._wsm._domains["Page"] = {}
+        self._wsm._events["Page"] = []
+        self._wsm._recv = MagicMock(return_value=None)
+        self._wsm.execute = MagicMock()
 
         self.interface.get_url()
         self.interface.get_page_source()
-        self.assertEqual(2, self.interface._session_manager.execute.call_count)
+        self.assertEqual(2, self._wsm.execute.call_count)
         self.interface.get_url()
         self.interface.get_page_source()
-        self.assertEqual(3, self.interface._session_manager.execute.call_count)
+        self.assertEqual(3, self._wsm.execute.call_count)
 
         self.load_pages(2)
-        self.assertEqual(3, self.interface._session_manager.execute.call_count)
+        self.assertEqual(3, self._wsm.execute.call_count)
 
         self.interface.get_url()
         self.interface.get_page_source()
-        self.assertEqual(4, self.interface._session_manager.execute.call_count)
+        self.assertEqual(4, self._wsm.execute.call_count)
 
         self.load_js_pages(1)
         self.interface.get_url()
-        self.assertEqual(4, self.interface._session_manager.execute.call_count)
+        self.assertEqual(4, self._wsm.execute.call_count)
         self.interface.get_page_source()
-        self.assertEqual(5, self.interface._session_manager.execute.call_count)
+        self.assertEqual(5, self._wsm.execute.call_count)

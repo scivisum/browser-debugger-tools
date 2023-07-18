@@ -25,7 +25,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         sendResponse({result: chrome.runtime.id});
     }
     else {
-        console.log("Unexpected method: " + request.method);
+        sendResponse({result: "error", message: "Unexpected method: " + request.method});
     }
 });
 
@@ -39,6 +39,6 @@ chrome.runtime.onMessageExternal.addListener((request, sender, sendResponse) => 
         unblockMainFrames();
         sendResponse({result: "success"});
     } else {
-      console.log("Unexpected method: " + request.method);
+        sendResponse({result: "error", message: "Unexpected method: " + request.method});
    }
 });

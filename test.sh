@@ -1,15 +1,21 @@
 #!/bin/bash
 images=$(docker image list)
-for VERS in "106-3.8" "112-3.11"
+if [ "$1" == "--build" ] || [ -z "$1" ]; then
+  echo "No matchings provided"
+  exit 1
+fi
+for VERS in "112-3.11" "106-3.8"
 do
   matches=$(echo "$images" |grep browser-debugger-tools-test:$VERS)
-  echo "########### Testing Dockerfile-$VERS ###########"
-  if [ "$1" == "--build" ] || [ "$matches" == "" ]; then
+  if [ "$2" == "--build" ] || [ "$matches" == "" ]; then
+      echo "########### BUILDING Dockerfile-$VERS ###########"
     docker build -f Dockerfile-$VERS -t browser-debugger-tools-test:$VERS .
   fi
 done
 for VERS in "106-3.8" "112-3.11"
 do
-  docker run -v $PWD/tests:/code/tests -v $PWD/browserdebuggertools:/code/browserdebuggertools \
-    browser-debugger-tools-test:$VERS tini -- xvfb-run pytest .
+  echo "########### TESTING Dockerfile-$VERS ###########"
+  docker run --init -v $PWD/tests:/code/tests -v $PWD/browserdebuggertools:/code/browserdebuggertools \
+    -v /tmp/screenshots:/tmp/screenshots \
+    browser-debugger-tools-test:$VERS xvfb-run pytest "/code/tests/$1" -s
 done

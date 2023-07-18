@@ -13,6 +13,10 @@ class NotFoundError(DevToolsException):
     pass
 
 
+class TargetNotFoundError(NotFoundError):
+    pass
+
+
 class DevToolsTimeoutException(DevToolsException):
     pass
 

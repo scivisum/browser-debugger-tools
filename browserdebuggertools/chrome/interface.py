@@ -1,11 +1,12 @@
 import contextlib
 import logging
+import re
 from base64 import b64decode, b64encode
+from typing import Optional
 
-from browserdebuggertools.exceptions import ResourceNotFoundError
 from browserdebuggertools import models
-from browserdebuggertools.wssessionmanager import WSSessionManager
-
+from browserdebuggertools.exceptions import TargetNotFoundError
+from browserdebuggertools.targetsmanager import TargetsManager
 
 logging.basicConfig(format='%(levelname)s:%(message)s')
 
@@ -21,38 +22,83 @@ class ChromeInterface(object):
             interface.navigate(url="https://github.com/scivisum/browser-debugger-tools")
     """
 
-    def __init__(self, port, host="localhost", timeout=30, domains=None):
+    def __init__(
+        self,
+        port: int,
+        host: str = "localhost",
+        timeout: int = 30,
+        domains: Optional[dict] = None,
+        attach: bool = True
+    ):
         """ Initialises the interface starting the websocket connection and enabling
             a series of domains.
 
         :param port: remote-debugging-port to connect.
+        :param host: host where the browser is
         :param timeout: Timeout between executing a command and receiving a result.
         :param domains: Dictionary of dictionaries where the Key is the domain string and the Value
-        is a dictionary of the arguments passed with the domain upon enabling.
+            is a dictionary of the arguments passed with the domain upon enabling.
+        :param attach: If set to true, the interface will attach to the first page target found.
+            If there are no  page targets, a new tab will be created.
         """
-        # type: WSSessionManager
-        self._session_manager = WSSessionManager(port, host, timeout, domains=domains)
-        self._dom_manager = _DOMManager(self._session_manager)
+        self._targets_manager = TargetsManager(timeout, port, host=host, domains=domains)
+        if attach:
+            self.switch_target()
+
+    @property
+    def targets(self):
+        return self._targets_manager.refresh_targets()
+
+    def switch_target(self, target_id=None):
+        """
+        Switches the current target to the one specified by target_id. If no target_id is
+        specified, the first page target found will be used. If no page targets are found, a new
+        tab will be created.
+        """
+        self._targets_manager.refresh_targets()
+        if target_id:
+            if target_id in self._targets_manager.targets:
+                self._targets_manager.switch_target(target_id)
+            else:
+                raise TargetNotFoundError(f"Target with id {target_id} not found")
+        else:
+            page_targets = [
+                target_id for target_id, target in self._targets_manager.targets.items()
+                if target.type == "page"
+            ]
+            if self._targets_manager.targets:
+                self._targets_manager.switch_target(page_targets[0])
+            else:
+                new_target = self.create_tab()
+                self._targets_manager.switch_target(new_target.id)
+
+    def create_tab(self):
+        """ Creates a new tab and switches to it.
+        """
+        return self._targets_manager.create_tab()
 
     def quit(self):
-        self._session_manager.close()
+        """
+        Close all connections to the browser and reset state
+        """
+        self._targets_manager.detach_all()
+        self.reset()
 
     def reset(self):
         """ Clears all stored messages
         """
-        self._session_manager.reset()
-        self._dom_manager.reset()
+        self._targets_manager.reset()
 
     def get_events(self, domain, clear=False):
-        """ Retrieves all events for a given domain
+        """ Retrieves all events for a given domain for the current target
           :param domain: The domain to get the events for.
           :param clear: Removes the stored events if set to true.
           :return: List of events.
           """
-        return self._session_manager.get_events(domain, clear)
+        return self._targets_manager.get_events(domain, clear=clear)
 
     def execute(self, domain, method, params=None):
-        """ Executes a command and returns the result.
+        """ Executes a command against the current target and returns the result.
 
         Usage example:
 
@@ -65,40 +111,36 @@ class ChromeInterface(object):
         :param params: Parameters to be executed
         :return: The result of the command
         """
-        return self._session_manager.execute(domain, method, params=params)
+        return self._targets_manager.execute(domain, method, params=params)
 
     def enable_domain(self, domain, params=None):
-        """ Enables notifications for the given domain.
+        """ Enables events for the given domain for the current target.
         """
-        self._session_manager.enable_domain(domain, parameters=params)
+        self._targets_manager.enable_domain(domain, parameters=params)
 
     def disable_domain(self, domain):
         """ Disables further notifications from the given domain. Also clears any events cached for
             that domain, it is recommended that you get events for the domain before disabling it.
 
         """
-        self._session_manager.disable_domain(domain)
+        self._targets_manager.disable_domain(domain)
 
     @contextlib.contextmanager
     def set_timeout(self, value):
         """ Switches the timeout to the given value.
         """
-        _timeout = self._session_manager.timeout
-        self._session_manager.timeout = value
-        try:
+        with self._targets_manager.set_timeout(value):
             yield
-        finally:
-            self._session_manager.timeout = _timeout
 
     def navigate(self, url):
-        """ Navigates to the given url
+        """ Navigates to the given url within the current target
         """
         return self.execute("Page", "navigate", {
             "url": url
         })
 
     def take_screenshot(self, filepath):
-        """ Takes a screenshot of the current page
+        """ Takes a screenshot of the current target
         """
         response = self.execute("Page", "captureScreenshot")
         image_data = response["data"]
@@ -108,22 +150,23 @@ class ChromeInterface(object):
     def stop_page_load(self):
         return self.execute("Page", "stopLoading")
 
-    def execute_javascript(self, script):
-        result = self.execute("Runtime", "evaluate", {
+    def execute_javascript(self, script, **kwargs):
+        params = {
             "expression": script,
-            "returnByValue": True
-        })["result"]
+        }
+        for k, v in kwargs.items():
+            params[k] = v
+        result = self.execute("Runtime", "evaluate", params)["result"]
 
         return result.get("value")
 
-    def get_url(self):
-        # type: () -> str
+    def get_url(self) -> str:
         """
         Consider enabling the Page domain to increase performance.
 
         :returns: The url of the current page.
         """
-        return self._session_manager.event_handlers["PageLoad"].get_current_url()
+        return self._targets_manager.get_url()
 
     def get_document_readystate(self):
         """ Gets the document.readyState of the page.
@@ -176,20 +219,16 @@ class ChromeInterface(object):
         """
         self.execute("Network", "setExtraHTTPHeaders", {"headers": headers})
 
-    def get_opened_javascript_dialog(self):
-        # type: () -> models.JavascriptDialog
+    def get_opened_javascript_dialog(self) -> models.JavascriptDialog:
         """
-        Gets the opened javascript dialog.
+        Gets the opened javascript dialog for the current target.
 
         :raises DomainNotEnabledError: If the Page domain isn't enabled
         :raises JavascriptDialogNotFoundError: If there is currently no dialog open
         """
-        return (
-            self._session_manager.event_handlers["JavascriptDialog"].get_opened_javascript_dialog()
-        )
+        return self._targets_manager.get_opened_javascript_dialog()
 
-    def get_iframe_source_content(self, xpath):
-        # type: (str) -> str
+    def get_iframe_source_content(self, xpath: str) -> str:
         """
         Returns the HTML markup for an iframe document, where the iframe node can be located in the
         DOM with the given xpath.
@@ -199,117 +238,54 @@ class ChromeInterface(object):
         :raises IFrameNotFoundError: A matching iframe document could not be found
         :raises UnknownError: The socket handler received a message with an unknown error code
         """
-        return self._dom_manager.get_iframe_html(xpath)
+        return self._targets_manager.get_iframe_source_content(xpath)
 
-    def get_page_source(self):
-        # type: () -> str
+    def get_page_source(self) -> str:
         """
         Returns the HTML markup of the current page. Iframe tags are included but the enclosed
         documents are not. Consider enabling the Page domain to increase performance.
 
         :return: HTML markup
         """
+        return self._targets_manager.get_page_source()
 
-        root_node_id = self._session_manager.event_handlers["PageLoad"].get_root_backend_node_id()
-        return self._dom_manager.get_outer_html(root_node_id)
-
-
-class _DOMManager(object):
-
-    def __init__(self, socket_handler):
-        self._socket_handler = socket_handler
-        self._node_map = {}
-
-    def get_outer_html(self, backend_node_id):
-        # type: (int) -> str
-        return self._socket_handler.execute(
-            "DOM", "getOuterHTML", {"backendNodeId": backend_node_id}
-        )["outerHTML"]
-
-    def get_iframe_html(self, xpath):
-        # type: (str) -> str
-
-        backend_node_id = self._get_iframe_backend_node_id(xpath)
-        try:
-            return self.get_outer_html(backend_node_id)
-        except ResourceNotFoundError:
-            # The cached node doesn't exist anymore, so we need to find a new one that matches
-            # the xpath. Backend node IDs are unique, so there is not a risk of getting the
-            # outer html of the wrong node.
-            if xpath in self._node_map:
-                del self._node_map[xpath]
-            backend_node_id = self._get_iframe_backend_node_id(xpath)
-            return self.get_outer_html(backend_node_id)
-
-    def _get_iframe_backend_node_id(self, xpath):
-        # type: (str) -> int
-
-        if xpath in self._node_map:
-            return self._node_map[xpath]
-
-        node_info = self._get_info_for_first_matching_node(xpath)
-        try:
-
-            backend_node_id = node_info["node"]["contentDocument"]["backendNodeId"]
-        except KeyError:
-            raise ResourceNotFoundError("The node found by xpath '%s' is not an iframe" % xpath)
-
-        self._node_map[xpath] = backend_node_id
-        return backend_node_id
-
-    def _get_info_for_first_matching_node(self, xpath):
-        # type: (str) -> dict
-
-        with self._get_node_ids(xpath) as node_ids:
-            if node_ids:
-                return self._describe_node(node_ids[0])
-        raise ResourceNotFoundError("No matching nodes for xpath: %s" % xpath)
-
-    @contextlib.contextmanager
-    def _get_node_ids(self, xpath, max_matches=1):
-        # type: (str, int) -> list
-
-        assert max_matches > 0
-        search_info = self._perform_search(xpath)
-        try:
-            results = []
-            if search_info["resultCount"] > 0:
-                results = self._get_search_results(
-                    search_info["searchId"], 0, min([max_matches, search_info["resultCount"]])
-                )["nodeIds"]
-            yield results
-
-        finally:
-            self._discard_search(search_info["searchId"])
-
-    def _perform_search(self, xpath):
-        # type: (str) -> dict
-
-        # DOM.getDocument must have been called on the current page first otherwise performSearch
-        # returns an array of 0s.
-        self._socket_handler.event_handlers["PageLoad"].check_page_load()
-        return self._socket_handler.execute("DOM", "performSearch", {"query": xpath})
-
-    def _get_search_results(self, search_id, from_index, to_index):
-        # type: (str, int, int) -> dict
-
-        return self._socket_handler.execute("DOM", "getSearchResults", {
-            "searchId": search_id, "fromIndex": from_index, "toIndex": to_index
-        })
-
-    def _discard_search(self, search_id):
-        # type: (str) -> None
+    def block_main_frames(self):
         """
-        Discards search results for the session with the given id. get_search_results should no
-        longer be called for that search.
+         Don't let the browser load any main frames (i.e. page loadsk and iframes)
         """
+        extension_id = self.execute_javascript(
+            'localStorage.getItem("requestBlockerExtensionID")',
+            returnByValue=True
+        )
+        self.execute_javascript(
+            f'chrome.runtime.sendMessage("{extension_id}",'
+            '{method: "blockMainFrames"})',
+            returnByValue=True,
+            awaitPromise=True
+        )
 
-        self._socket_handler.execute("DOM", "discardSearchResults", {"searchId": search_id})
+    def unblock_main_frames(self):
+        """
+        Stop blocking main frames
+        """
+        extension_id = self.execute_javascript(
+            'localStorage.getItem("requestBlockerExtensionID")',
+            returnByValue=True
+        )
+        self.execute_javascript(
+            f'chrome.runtime.sendMessage("{extension_id}",'
+            '{method: "unblockMainFrames"})',
+            returnByValue=True,
+            awaitPromise=True
+        )
 
-    def _describe_node(self, node_id):
-        # type: (str) -> dict
+    def get_all_events(self, domain, clear=False):
+        """ Retrieves all events for a given domain for all targets
+          :param domain: The domain to get the events for.
+          :param clear: Removes the stored events if set to true.
+          :return: List of events.
+          """
+        return self._targets_manager.get_all_events(domain, clear=clear)
 
-        return self._socket_handler.execute("DOM", "describeNode", {"nodeId": node_id})
-
-    def reset(self):
-        self._node_map = {}
+    def reload(self):
+        return self.execute("Page", "reload")
