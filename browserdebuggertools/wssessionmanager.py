@@ -4,7 +4,7 @@ import logging
 import socket
 import time
 import collections
-from threading import Thread, Lock, Event
+from threading import Thread, Lock, Event, RLock
 
 from typing import Dict, Callable
 
@@ -233,7 +233,7 @@ class WSSessionManager:
         self._events_access_lock = Lock()
 
         # Used to manage the health of the message producer
-        self._message_producer_lock = Lock()  # Lock making sure we don't create 2 ws connections
+        self._message_producer_lock = RLock()  # Lock making sure we don't create 2 ws connections
         self._last_not_ok = None
         self._message_producer_not_ok_count = 0
         self._send_queue = collections.deque()
@@ -255,6 +255,9 @@ class WSSessionManager:
             try:
                 self._message_producer.health_check()
             except (websocket.WebSocketConnectionClosedException, WebSocketBlockedException):
+                # If the current ws connection is only blocked, we better make sure we close it
+                # before opening a new one.
+                self._message_producer.close()
                 self._increment_message_producer_not_ok()
                 self._setup_ws_session()
 

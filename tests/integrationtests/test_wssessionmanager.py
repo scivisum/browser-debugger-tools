@@ -53,7 +53,7 @@ class FullWebSocket(_DummyWebsocket):
 
 
 class Test_WSSessionManager__execute(TestCase):
-    """ It's very hard to make this test fail but it will catch major regressions
+    """ It's very hard to make this test fail, but it will catch major regressions
     """
     def setUp(self):
         self.pool = ThreadPool(10)
@@ -84,7 +84,7 @@ class Test_WSSessionManager__execute(TestCase):
 
 
 class Test_WSSessionManager_get_events(TestCase):
-    """ It's very hard to make this test fail but it will catch major regressions
+    """ It's very hard to make this test fail, but it will catch major regressions
     """
 
     def test_locked_get_events(self):
@@ -188,11 +188,36 @@ class ExceptionThrowingWS(_DummyWebsocket):
         pass
 
 
+class Test_WSSessionManager_blocked_with_domains(TestCase):
+    """ We need this test to prove we have fixed the problem of a message producer being blocked.
+        When it tried to recreate the websocket, it shouldn't deadlock.
+    """
+
+    def tearDown(self):
+        self.session_manager.close()
+
+    def test_deadlock(self):
+
+        with patch.object(
+            _WSMessageProducer, "_get_websocket",
+            new=MagicMock(return_value=_DummyWebsocket())
+        ):
+
+            self.session_manager = WSSessionManager(
+                1234, "localhost", 2, domains={"Network": {}}
+            )
+            # The first message producer and web socket are clocked.
+            # When the ws session is recreated we get a new one which won't be blocked.
+            self.session_manager._message_producer._BLOCKED_TIMEOUT = -1
+
+            self.session_manager.execute("Network", "enable")
+
+
 class Test_WSSessionManager_execute(TestCase):
 
     @staticmethod
     def resetWS():
-        """ flush_messages runs async so we only want the socket to start blocking when we're
+        """ flush_messages runs async, so we only want the socket to start blocking when we're
             ready
         """
         ExceptionThrowingWS.exceptions = 0
@@ -218,6 +243,7 @@ class Test_WSSessionManager_execute(TestCase):
             start = time.time()
             self.session_manager.execute("Network", "enable")
 
+            # todo wtf
             # We should find the execution result after 5 seconds because
             # we give the thread 5 seconds to poll before we consider it blocked,
             self.assertLess(time.time() - start, 10)
@@ -241,8 +267,8 @@ class Test_WSSessionManager_execute(TestCase):
 
             self.session_manager = WSSessionManager(1234, "localhost", 3)
             self.resetWS()
+            start = time.time()
             with self.assertRaises(DevToolsTimeoutException):
-                start = time.time()
                 self.session_manager.execute("Network", "enable")
             self.assertLess(time.time() - start, 5)
 
