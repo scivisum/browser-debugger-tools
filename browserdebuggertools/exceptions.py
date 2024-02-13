@@ -17,6 +17,10 @@ class TargetNotFoundError(NotFoundError):
     pass
 
 
+class TargetNotAttachedError(DevToolsException):
+    pass
+
+
 class DevToolsTimeoutException(DevToolsException):
     pass
 

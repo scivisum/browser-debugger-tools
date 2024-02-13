@@ -1,25 +1,25 @@
 import contextlib
 import json
 import logging
-import pdb
 import socket
 import time
 import collections
 from threading import Thread, Lock, Event, RLock
 
-from typing import Dict, Callable, Optional, List
+from typing import Dict, Callable, Optional, List, NamedTuple
 
 import requests
 import websocket
 
-from browserdebuggertools.eventhandlers import (
+from browserdebuggertools.event_handlers import (
     EventHandler, PageLoadEventHandler, JavascriptDialogEventHandler
 )
 from browserdebuggertools.exceptions import (
     DevToolsException, MaxRetriesException,
     DevToolsTimeoutException, DomainNotEnabledError,
     MethodNotFoundError, UnknownError, ResourceNotFoundError, MessagingThreadIsDeadError,
-    InvalidParametersError, WebSocketBlockedException
+    InvalidParametersError, WebSocketBlockedException,
+    TargetNotAttachedError
 )
 
 
@@ -128,7 +128,7 @@ class _WSMessageProducer(Thread):
     @property
     def blocked(self):
         """ Returns True if:
-                the websocket hangs https://github.com/websocket-client/websocket-client/issues/437
+                the websocket hangs https://github.com/websocket-client/websocket-client/issues/437,
                 or we've been consuming messages from the websocket for too long **
 
             Although taking too long to receive messages from the websocket doesn't technically mean
@@ -203,6 +203,8 @@ class _Target:
         return self.info["type"]
 
     def reset(self):
+        if not self.wsm:
+            raise TargetNotAttachedError()
         self.wsm.reset()
         self.dom_manager.reset()
 
@@ -213,6 +215,11 @@ class _Target:
 
     def detach(self):
         self.wsm.close()
+
+
+class EventHandlers(NamedTuple):
+    pageLoad: PageLoadEventHandler
+    javascriptDialog: JavascriptDialogEventHandler
 
 
 class _WSSessionManager:
@@ -226,15 +233,16 @@ class _WSSessionManager:
         self._events = dict([(k, []) for k in self._domains])
         self._results = {}
 
-        self.event_handlers: Dict[str, EventHandler] = {
-            "PageLoad": PageLoadEventHandler(self),
-            "JavascriptDialog": JavascriptDialogEventHandler(self),
-        }
+        self.event_handlers: EventHandlers = EventHandlers(
+            PageLoadEventHandler(self),
+            JavascriptDialogEventHandler(self)
+        )
 
         self._internal_events: Dict[str, EventHandler] = {}
-        for handler in self.event_handlers.values():
-            for event in handler.supported_events:
-                self._internal_events[event] = handler
+        for event in self.event_handlers.pageLoad.supported_events:
+            self._internal_events[event] = self.event_handlers.pageLoad
+        for event in self.event_handlers.javascriptDialog.supported_events:
+            self._internal_events[event] = self.event_handlers.javascriptDialog
 
         # Used to manage concurrency within the session manager
         self._next_result_id = 0
@@ -251,8 +259,6 @@ class _WSSessionManager:
         self._message_producer = None
 
         self._setup_ws_session()
-        for domain, params in self._domains.items():
-            self.enable_domain(domain, params)
 
     def __del__(self):
         self.close()
@@ -463,7 +469,7 @@ class _DOMManager:
         try:
             return self.get_outer_html(backend_node_id)
         except ResourceNotFoundError:
-            # The cached node doesn't exist any more, so we need to find a new one that matches
+            # The cached node doesn't exist anymore, so we need to find a new one that matches
             # the xpath. Backend node IDs are unique, so there is not a risk of getting the
             # outer html of the wrong node.
             if xpath in self._node_map:
@@ -471,7 +477,7 @@ class _DOMManager:
             backend_node_id = self._get_iframe_backend_node_id(xpath)
             return self.get_outer_html(backend_node_id)
 
-    def _get_iframe_backend_node_id(self, xpath: str) -> str:
+    def _get_iframe_backend_node_id(self, xpath: str) -> int:
         if xpath in self._node_map:
             return self._node_map[xpath]
 
@@ -510,7 +516,7 @@ class _DOMManager:
     def _perform_search(self, xpath: str) -> dict:
         # DOM.getDocument must have been called on the current page first otherwise performSearch
         # returns an array of 0s.
-        self._socket_handler.event_handlers["PageLoad"].check_page_load()
+        self._socket_handler.event_handlers.pageLoad.check_page_load()
         return self._socket_handler.execute("DOM", "performSearch", {"query": xpath})
 
     def _get_search_results(self, search_id: str, from_index: int, to_index: int) -> dict:
@@ -523,7 +529,6 @@ class _DOMManager:
         Discards search results for the session with the given id. get_search_results should no
         longer be called for that search.
         """
-
         self._socket_handler.execute("DOM", "discardSearchResults", {"searchId": search_id})
 
     def _describe_node(self, node_id: str) -> dict:
@@ -557,18 +562,19 @@ class TargetsManager:
         self.current_target_id = None
 
     def get_opened_javascript_dialog(self):
-        return (self.current_target.wsm.event_handlers["JavascriptDialog"].
-                get_opened_javascript_dialog())
+        return (
+            self.current_target.wsm.event_handlers.javascriptDialog.get_opened_javascript_dialog()
+        )
 
     def get_page_source(self):
-        root_node_id = self.current_target.wsm.event_handlers["PageLoad"].get_root_backend_node_id()
+        root_node_id = self.current_target.wsm.event_handlers.pageLoad.get_root_backend_node_id()
         return self.current_target.dom_manager.get_outer_html(root_node_id)
 
     def get_iframe_source_content(self, xpath):
         return self.current_target.dom_manager.get_iframe_html(xpath)
 
     def get_url(self):
-        return self.current_target.wsm.event_handlers["PageLoad"].get_current_url()
+        return self.current_target.wsm.event_handlers.pageLoad.get_current_url()
 
     @contextlib.contextmanager
     def set_timeout(self, value: int):
@@ -601,6 +607,8 @@ class TargetsManager:
         self.current_target.wsm.enable_domain(domain, parameters=parameters)
 
     def disable_domain(self, domain: str):
+        if domain not in self._domains:
+            raise DomainNotEnabledError(domain)
         del self._domains[domain]
         return self.current_target.wsm.disable_domain(domain)
 
@@ -623,14 +631,22 @@ class TargetsManager:
     def refresh_targets(self):
         expected = self._get_targets()
         expected_ids = []
+        # For each target we just fetched
         for targetInfo in expected:
             expected_ids.append(targetInfo["id"])
-            if targetInfo["id"] not in self._targets:
-                target = _Target(targetInfo, self._connection_timeout, domains=self._domains)
-                target.attach()
-                self._targets[targetInfo["id"]] = target
-            else:
-                self._targets[targetInfo["id"]].info = targetInfo
+
+            # Ignore targets that are not pages. Some targets, do not support the same protocol,
+            # i.e. a service_worker target doesn't support the "Page" domain, and if we try to
+            # enable it, we get an exception.
+            if targetInfo["type"] == "page":
+                if targetInfo["id"] not in self._targets:
+                    target = _Target(targetInfo, self._connection_timeout, domains=self._domains)
+                    target.attach()
+                    self._targets[targetInfo["id"]] = target
+                else:
+                    self._targets[targetInfo["id"]].info = targetInfo
+
+        # detach and remove any target that does not exist anymore.
         for target_id, target in list(self._targets.items()):
             if target_id not in expected_ids:
                 target.detach()
@@ -643,6 +659,7 @@ class TargetsManager:
 
     @_unwrap_json_response
     def _get_targets(self):
+        # noinspection HttpUrlsUsage
         return requests.get(
             f"http://{self._host}:{self._port}/json", timeout=self._connection_timeout
         )
@@ -654,6 +671,7 @@ class TargetsManager:
 
     @_unwrap_json_response
     def _create_tab(self):
+        # noinspection HttpUrlsUsage
         return requests.put(
             f"http://{self._host}:{self._port}/json/new", timeout=self._connection_timeout
         )

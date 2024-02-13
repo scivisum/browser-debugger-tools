@@ -8,7 +8,7 @@ from multiprocessing.pool import ThreadPool
 import websocket
 
 from browserdebuggertools.exceptions import DevToolsTimeoutException, MaxRetriesException
-from browserdebuggertools.targetsmanager import (
+from browserdebuggertools.targets_manager import (
     _WSSessionManager, _WSMessageProducer
 )
 

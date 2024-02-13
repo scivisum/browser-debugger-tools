@@ -2,10 +2,10 @@ from unittest import TestCase
 
 from unittest.mock import MagicMock, patch
 
-from browserdebuggertools.eventhandlers import PageLoadEventHandler, JavascriptDialogEventHandler
+from browserdebuggertools.event_handlers import PageLoadEventHandler, JavascriptDialogEventHandler
 from browserdebuggertools.exceptions import DomainNotEnabledError, JavascriptDialogNotFoundError
 
-MODULE_PATH = "browserdebuggertools.eventhandlers."
+MODULE_PATH = "browserdebuggertools.event_handlers."
 
 
 class PageLoadEventHandlerTest(TestCase):

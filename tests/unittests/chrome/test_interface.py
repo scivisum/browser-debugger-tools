@@ -15,15 +15,18 @@ class ChromeInterfaceTest(TestCase):
             self.interface = ChromeInterface(1234, "localhost", attach=False)
 
 
-@patch(MODULE_PATH + "ChromeInterface.execute", MagicMock())
+@patch(MODULE_PATH + "ChromeInterface.execute")
 class Test_ChromeInterface_execute_javascript(ChromeInterfaceTest):
 
-    def test(self):
+    def test(self, mockExecute):
         mock_result = MagicMock()
-        self.interface.execute.return_value = {"id": 1, "result": {"value": mock_result}}
+        mockExecute.return_value = {"id": 1, "result": {"value": mock_result}}
 
-        result = self.interface.execute_javascript("document.readyState")
+        result = self.interface.execute_javascript("document.readyState", foo="baa", x=2)
 
+        mockExecute.assert_called_once_with(
+            "Runtime", "evaluate", {"expression": "document.readyState", "foo": "baa", "x": 2}
+        )
         self.assertEqual(mock_result, result)
 
 

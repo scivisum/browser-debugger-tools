@@ -1,12 +1,11 @@
 import contextlib
 import logging
-import re
 from base64 import b64decode, b64encode
 from typing import Optional
 
 from browserdebuggertools import models
 from browserdebuggertools.exceptions import TargetNotFoundError
-from browserdebuggertools.targetsmanager import TargetsManager
+from browserdebuggertools.targets_manager import TargetsManager
 
 logging.basicConfig(format='%(levelname)s:%(message)s')
 
@@ -66,7 +65,7 @@ class ChromeInterface(object):
                 target_id for target_id, target in self._targets_manager.targets.items()
                 if target.type == "page"
             ]
-            if self._targets_manager.targets:
+            if page_targets:
                 self._targets_manager.switch_target(page_targets[0])
             else:
                 new_target = self.create_tab()
@@ -119,9 +118,9 @@ class ChromeInterface(object):
         self._targets_manager.enable_domain(domain, parameters=params)
 
     def disable_domain(self, domain):
-        """ Disables further notifications from the given domain. Also clears any events cached for
-            that domain, it is recommended that you get events for the domain before disabling it.
-
+        """ Disables further notifications from the given domain for the current target.
+            Also clears any events cached for that domain,
+            it is recommended that you get events for the domain before disabling it.
         """
         self._targets_manager.disable_domain(domain)
 
@@ -154,8 +153,7 @@ class ChromeInterface(object):
         params = {
             "expression": script,
         }
-        for k, v in kwargs.items():
-            params[k] = v
+        params.update(kwargs)
         result = self.execute("Runtime", "evaluate", params)["result"]
 
         return result.get("value")
@@ -204,12 +202,12 @@ class ChromeInterface(object):
 
         return self.execute("Network", "emulateNetworkConditions", network_conditions)
 
-    def set_basic_auth(self, username, password):
+    def set_basic_auth(self, username: bytes, password: bytes):
         """
         Creates a basic type Authorization header from the username and password strings
         and applies it to all requests
         """
-        auth = b"Basic " + b64encode("%s:%s" % (username, password))
+        auth = b"Basic " + b64encode(b"%s:%s" % (username, password))
         self.set_request_headers({"Authorization": auth})
 
     def set_request_headers(self, headers):
@@ -251,7 +249,7 @@ class ChromeInterface(object):
 
     def block_main_frames(self):
         """
-         Don't let the browser load any main frames (i.e. page loadsk and iframes)
+         Don't let the browser load any main frames (i.e. page loads and iframes)
         """
         extension_id = self.execute_javascript(
             'localStorage.getItem("requestBlockerExtensionID")',
@@ -263,6 +261,8 @@ class ChromeInterface(object):
             returnByValue=True,
             awaitPromise=True
         )
+        # todo can we get a return value, so we can tell if it has worked?
+        #  we don't seem to be getting a value returned at the moment
 
     def unblock_main_frames(self):
         """
@@ -278,6 +278,8 @@ class ChromeInterface(object):
             returnByValue=True,
             awaitPromise=True
         )
+        # todo can we get a return value, so we can tell if it has worked?
+        #  we don't seem to be getting a value returned at the moment
 
     def get_all_events(self, domain, clear=False):
         """ Retrieves all events for a given domain for all targets

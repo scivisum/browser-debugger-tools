@@ -8,8 +8,8 @@ from unittest.mock import MagicMock, patch
 
 from browserdebuggertools.chrome.interface import ChromeInterface
 from browserdebuggertools.exceptions import DevToolsTimeoutException
-from browserdebuggertools.targetsmanager import _WSMessageProducer, _Target, TargetsManager
-from tests.integrationtests.test_targetsmanager import _DummyWebsocket
+from browserdebuggertools.targets_manager import _WSMessageProducer
+from tests.integrationtests.test_targets_manager import _DummyWebsocket
 
 MODULE_PATH = "browserdebuggertools.chrome.interface."
 
@@ -29,7 +29,7 @@ class ChromeInterfaceTest(TestCase):
         with patch.object(
             _WSMessageProducer, "_get_websocket", new=MagicMock(return_value=self.WEBSOCKET_CLS())
         ):
-            from browserdebuggertools.targetsmanager import requests
+            from browserdebuggertools.targets_manager import requests
             get = MagicMock()
             get.return_value.json.return_value = [{
                 "id": "abc123",
