@@ -1,0 +1,2 @@
+graft browserdebuggertools
+global-exclude *.pyc

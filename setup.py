@@ -13,6 +13,7 @@ setup(
     name="browserdebuggertools",
     version="6.2.0",
     python_requires='>=3.8',
+    include_package_data=True,
     packages=PACKAGES,
     install_requires=requires,
     license="GNU General Public License v3",
