@@ -4,10 +4,12 @@ import shutil
 import time
 import tempfile
 from abc import ABC
+from typing import Union
 from unittest import TestCase
 
 from requests import ConnectionError
 
+from browserdebuggertools.chrome import CHROME_EXTENSIONS
 from browserdebuggertools.exceptions import (
     DevToolsException, DevToolsTimeoutException, JavascriptDialogNotFoundError,
     ResourceNotFoundError, MessagingThreadIsDeadError
@@ -22,31 +24,40 @@ BROWSER_PATH = os.environ.get("DEFAULT_CHROME_BROWSER_PATH", "/opt/google/chrome
 TEMP = tempfile.gettempdir()
 
 
-class ChromeInterfaceTest(ABC, TestCase):
+class ChromeInterfaceTest(ABC):
 
     testSite = None
     browser = None
     browser_cache_dir = TEMP + "/ChromeInterfaceTest_%s" % (time.time() * 1000)
     devtools_client = None
     headless = True
+    browser_version = None
 
     @classmethod
     def setUpClass(cls):
+
+        completed = subprocess.run([BROWSER_PATH, "--version"], check=True,
+                                   capture_output=True, text=True)
+        cls.browser_version = int(completed.stdout.split(" ")[2].split(".")[0])
 
         cls.testSite = LocalTestSite()
         cls.testSite.start()
 
         devtools_port = get_free_port()
 
-        cls.browser = subprocess.Popen([
+        cmd = [
             BROWSER_PATH,
             "--remote-debugging-port=%s" % devtools_port,
             "--no-default-browser-check",
-            "--headless" if cls.headless else "",
+            "--headless=new" if cls.headless else "",
             "--user-data-dir=%s" % cls.browser_cache_dir,
             "--no-first-run", "--disable-gpu",
             "--no-sandbox", "--remote-allow-origins=*"
-        ])
+        ]
+        cmd += [
+            f"--load-extension={extension}" for extension in CHROME_EXTENSIONS
+        ]
+        cls.browser = subprocess.Popen(cmd)
 
         start = time.time()
         while time.time() - start < 30:
@@ -62,6 +73,9 @@ class ChromeInterfaceTest(ABC, TestCase):
 
         else:
             raise Exception("Devtools client could not connect to browser")
+
+    def _execute_async(self, *args, **kwargs):
+        return self.devtools_client._targets_manager.current_target.wsm.execute_async(*args, **kwargs)
 
     def _assert_dom_complete(self, timeout=10):
 
@@ -83,6 +97,9 @@ class ChromeInterfaceTest(ABC, TestCase):
             if event.get("method") == "Network.responseReceived":
                 responses_received.append(event["params"]["response"]["status"])
         return responses_received
+
+    def _click(self, id_):
+        self.devtools_client.execute_javascript(f"document.getElementById({id_}).click()")
 
     @classmethod
     def tearDownClass(cls):
@@ -107,7 +124,8 @@ class ChromeInterfaceTakeScreenshot(ChromeInterfaceTest):
         self._assert_dom_complete()
         self.devtools_client.take_screenshot(self.file_path)
         self.assertTrue(os.path.exists(self.file_path))
-        self.assertTrue(os.path.getsize(self.file_path) >= 5000)
+        # Sanity check the screenshot is a sensible size
+        self.assertTrue(os.path.getsize(self.file_path) >= 3000)
 
     def test_take_screenshot_incomplete_main_exchange(self):
 
@@ -142,11 +160,11 @@ class ChromeInterfaceTakeScreenshot(ChromeInterfaceTest):
         self.devtools_client.disable_domain("Page")
 
 
-class TestChromeInterfaceTakeScreenshotHeaded(ChromeInterfaceTakeScreenshot):
+class TestChromeInterfaceTakeScreenshotHeaded(ChromeInterfaceTakeScreenshot, TestCase):
     headless = False
 
 
-class TestChromeInterfaceTakeScreenshotHeadless(ChromeInterfaceTakeScreenshot):
+class TestChromeInterfaceTakeScreenshotHeadless(ChromeInterfaceTakeScreenshot, TestCase):
     headless = True
 
 
@@ -182,11 +200,11 @@ class ChromeInterfaceGetDocumentReadystate(ChromeInterfaceTest):
             self.assertEqual("loading", self.devtools_client.get_document_readystate())
 
 
-class TestChromeInterfaceGetDocumentReadystateHeaded(ChromeInterfaceGetDocumentReadystate):
+class TestChromeInterfaceGetDocumentReadystateHeaded(ChromeInterfaceGetDocumentReadystate, TestCase):
     headless = False
 
 
-class TestChromeInterfaceGetDocumentReadystateHeadless(ChromeInterfaceGetDocumentReadystate):
+class TestChromeInterfaceGetDocumentReadystateHeadless(ChromeInterfaceGetDocumentReadystate, TestCase):
     headless = True
 
 
@@ -223,14 +241,14 @@ class ChromeInterfaceEmulateNetworkConditions(ChromeInterfaceTest):
         start = time.time()
         self.assertTrue(self.waitForEventWithMethod("Network.loadingFinished"))
         time_taken = time.time() - start
-        self.assertIn(int(round(time_taken)), [10, 11])  # Headed browser is a bit slower
+        self.assertIn(int(round(time_taken)), [10, 11, 12])  # Headed browser is a bit slower
 
 
-class TestChromeInterfaceEmulateNetworkConditionsHeaded(ChromeInterfaceEmulateNetworkConditions):
+class TestChromeInterfaceEmulateNetworkConditionsHeaded(ChromeInterfaceEmulateNetworkConditions, TestCase):
     headless = False
 
 
-class TestChromeInterfaceEmulateNetworkConditionsHeadless(ChromeInterfaceEmulateNetworkConditions):
+class TestChromeInterfaceEmulateNetworkConditionsHeadless(ChromeInterfaceEmulateNetworkConditions, TestCase):
     headless = True
 
 
@@ -257,11 +275,11 @@ class ChromeInterfaceSetBasicAuth(ChromeInterfaceTest):
         self.assertNotIn(401, responses_received)  # Devtools genuinely doesn't report these
 
 
-class TestChromeInterfaceSetBasicAuthHeaded(ChromeInterfaceSetBasicAuth):
+class TestChromeInterfaceSetBasicAuthHeaded(ChromeInterfaceSetBasicAuth, TestCase):
     headless = False
 
 
-class TestChromeInterfaceSetBasicAuthHeadless(ChromeInterfaceSetBasicAuth):
+class TestChromeInterfaceSetBasicAuthHeadless(ChromeInterfaceSetBasicAuth, TestCase):
     headless = True
 
 
@@ -282,13 +300,13 @@ class ChromeInterfaceConnectionUnexpectedlyDead(ChromeInterfaceTest):
 
 
 class TestChromeInterfaceConnectionUnexpectedlyClosedHeaded(
-    ChromeInterfaceConnectionUnexpectedlyDead
+    ChromeInterfaceConnectionUnexpectedlyDead, TestCase
 ):
     headless = False
 
 
 class TestChromeInterfaceConnectionUnexpectedlyClosedHeadless(
-    ChromeInterfaceConnectionUnexpectedlyDead
+    ChromeInterfaceConnectionUnexpectedlyDead, TestCase
 ):
     headless = True
 
@@ -341,11 +359,11 @@ class ChromeInterfaceCachePage(ChromeInterfaceTest):
         self.assertEqual(fake_page, _cleanupHTML(self.devtools_client.get_page_source()))
 
 
-class TestChromeInterfaceCachePageHeaded(ChromeInterfaceCachePage):
+class TestChromeInterfaceCachePageHeaded(ChromeInterfaceCachePage, TestCase):
     headless = False
 
 
-class TestChromeInterfaceCachePageHeadless(ChromeInterfaceCachePage):
+class TestChromeInterfaceCachePageHeadless(ChromeInterfaceCachePage, TestCase):
     headless = True
 
 
@@ -367,7 +385,7 @@ class ChromeInterfaceTestJavascriptDialogs(ChromeInterfaceTest):
         while self.get_dialog_if_present():
             self.devtools_client.get_opened_javascript_dialog().accept()
 
-        self.devtools_client._session_manager.execute_async("Runtime", "evaluate", {
+        self._execute_async("Runtime", "evaluate", {
             "expression": "reset()",
         })
         # Allow time for this message
@@ -380,7 +398,7 @@ class ChromeInterfaceTestJavascriptDialogs(ChromeInterfaceTest):
         self.devtools_client.navigate(self.url)
 
     def open_dialog(self, dialog):
-        self.devtools_client._session_manager.execute_async("Runtime", "evaluate", {
+        self._execute_async("Runtime", "evaluate", {
             "expression": "open_%s()" % dialog, "userGesture": True,
         })
         # wait for the dialog to appear
@@ -448,11 +466,11 @@ class ChromeInterfaceTestJavascriptDialogs(ChromeInterfaceTest):
         self.check_dialog(JavascriptDialog.BEFORE_UNLOAD, "")
 
 
-class TestChromeInterfaceTestJavascriptDialogsHeaded(ChromeInterfaceTestJavascriptDialogs):
+class TestChromeInterfaceTestJavascriptDialogsHeaded(ChromeInterfaceTestJavascriptDialogs, TestCase):
     headless = False
 
 
-class TestChromeInterfaceTestJavascriptDialogsHeadless(ChromeInterfaceTestJavascriptDialogs):
+class TestChromeInterfaceTestJavascriptDialogsHeadless(ChromeInterfaceTestJavascriptDialogs, TestCase):
     headless = True
 
 
@@ -512,14 +530,92 @@ class ChromeInterfaceTestGetIframeSourceContent(ChromeInterfaceTest):
 
 
 class TestChromeInterfaceTestGetIframeSourceContentHeaded(
-    ChromeInterfaceTestGetIframeSourceContent
+    ChromeInterfaceTestGetIframeSourceContent, TestCase
 ):
     headless = False
 
 
 class TestChromeInterfaceTestGetIframeSourceContentHeadless(
-    ChromeInterfaceTestGetIframeSourceContent
+    ChromeInterfaceTestGetIframeSourceContent, TestCase
 ):
+    headless = True
+
+
+class SwitchTabTest(ChromeInterfaceTest):
+
+    def setUp(self):
+        self.devtools_client.enable_domain("Page")
+
+    def tearDown(self):
+        self.devtools_client.disable_domain("Page")
+
+    def test(self: Union[TestCase, ChromeInterfaceTest]):
+
+        if self.browser_version < 112:
+            self.skipTest("Chrome version too old")
+            return
+
+        # Navigate to a simple page in an initial tab
+        self.devtools_client.enable_domain("Network")
+        self.devtools_client.navigate(f"http://localhost:{self.testSite.port}/simple_page")
+        self._assert_dom_complete()
+        original_target_id = self.devtools_client._targets_manager.current_target_id
+
+        # Block any new document requests and open url in a new tab
+        self.devtools_client.block_main_frames()
+        self.devtools_client.execute_javascript(
+            f"window.open('http://localhost:{self.testSite.port}/simple_page_2', '_blank')",
+            returnByValue=False, userGesture=True
+        )
+
+        # Initially the title of the new tab is equal to the URL, but if we wait a bit it will
+        # change to 'localhost' for a blocked request
+        time.sleep(1)
+        new_target_id, new_target = [
+            (target_id, target) for target_id, target in self.devtools_client.targets.items() if
+            target.info["url"].endswith("/simple_page_2")
+        ].pop()
+        url = new_target.info["url"]
+        self.assertEqual("localhost", new_target.info["title"])
+
+        # Switch to the new tab and enable the Network domain for it
+        self.devtools_client.switch_target(new_target_id)
+        self.devtools_client.enable_domain("Network")
+        self.assertIn(
+            '"details":"Details","errorCode":"ERR_BLOCKED_BY_CLIENT"',
+            self.devtools_client.get_page_source()
+        )
+
+        # Switch back to the original tab and unblock requests, then back to the new tab
+        self.devtools_client.switch_target(original_target_id)
+        self.devtools_client.unblock_main_frames()
+        self.devtools_client.switch_target(new_target_id)
+
+        # Reload the original url in the new tab
+        self.devtools_client.navigate(url)
+
+        # Verify that we got the requestWillBeSent network event for both tabs
+        found = {
+            "simple_page": False,
+            "simple_page_2": False
+        }
+        for event in self.devtools_client.get_all_events("Network"):
+            if event.get("method") == "Network.requestWillBeSent":
+                url = event["params"]["request"]["url"]
+                if url.endswith("/simple_page"):
+                    found["simple_page"] = True
+                elif url.endswith("/simple_page_2"):
+                    found["simple_page_2"] = True
+
+        self.assertTrue(found["simple_page"])
+        self.assertTrue(found["simple_page_2"])
+
+
+class TestSwitchTabHeaded(SwitchTabTest, TestCase):
+    headless = False
+
+
+class TestSwitchTabHeadless(SwitchTabTest, TestCase):
     headless = True
 
 

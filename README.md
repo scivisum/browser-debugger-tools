@@ -33,3 +33,15 @@ Or more generally you can call remote methods according to the devtools protocol
 >> devtools_client.execute(domain="Network", method="enable")
 >> devtools_client.execute("Network", "setUserAgentOverride", {"userAgent": "Test"})
 ````
+
+## Contributing
+
+### Running Tests
+The `test.sh` script makes running tests easier, it will create containers with the required
+environment; and run a virtual display for the E2E tests.
+
+It takes a single argument which is a pytest expression to run a subset of tests, for example:
+
+```
+./test.sh e2etests/chrome/test_interface.py::TestSwitchTabHeaded::test_switch_tab_headed
+```

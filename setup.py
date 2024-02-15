@@ -2,9 +2,8 @@ from setuptools import setup, find_packages
 
 
 requires = [
-        "requests",
-        "websocket-client",
-        "typing",
+    "requests",
+    "websocket-client"
 ]
 
 
@@ -12,7 +11,7 @@ PACKAGES = find_packages(include="browserdebuggertools*")
 
 setup(
     name="browserdebuggertools",
-    version="6.1.1",
+    version="6.2.0",
     python_requires='>=3.8',
     packages=PACKAGES,
     install_requires=requires,
