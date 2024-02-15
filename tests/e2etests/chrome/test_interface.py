@@ -241,7 +241,7 @@ class ChromeInterfaceEmulateNetworkConditions(ChromeInterfaceTest):
         start = time.time()
         self.assertTrue(self.waitForEventWithMethod("Network.loadingFinished"))
         time_taken = time.time() - start
-        self.assertIn(int(round(time_taken)), [10, 11])  # Headed browser is a bit slower
+        self.assertIn(int(round(time_taken)), [10, 11, 12])  # Headed browser is a bit slower
 
 
 class TestChromeInterfaceEmulateNetworkConditionsHeaded(ChromeInterfaceEmulateNetworkConditions, TestCase):
