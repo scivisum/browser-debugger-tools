@@ -74,3 +74,16 @@ class Test_ChromeInterface_switch_target(ChromeInterfaceTest):
 
         with self.assertRaises(TargetNotFoundError):
             self.interface.switch_target("target_3")
+
+
+class Test_ChromeInterface_service_worker(ChromeInterfaceTest):
+
+    def test(self):
+        service_worker = MagicMock()
+        self.interface._targets_manager.get_service_worker.return_value = service_worker
+
+        with self.interface.service_worker("myExtension.json") as service_worker:
+            service_worker.attach.assert_called_once_with()
+            self.assertFalse(service_worker.detach.called)
+
+        service_worker.detach.assert_called_once_with()

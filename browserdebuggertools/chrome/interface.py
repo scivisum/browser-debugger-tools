@@ -10,7 +10,7 @@ from browserdebuggertools.targets_manager import TargetsManager
 logging.basicConfig(format='%(levelname)s:%(message)s')
 
 
-class ChromeInterface(object):
+class ChromeInterface:
     """ The Chrome Interface communicates with the browser through the remote-debugging-port using
         the Chrome DevTools Protocol.
         For a thorough reference check: https://chromedevtools.github.io/devtools-protocol/
@@ -40,6 +40,7 @@ class ChromeInterface(object):
         :param attach: If set to true, the interface will attach to the first page target found.
             If there are no  page targets, a new tab will be created.
         """
+        self._timeout = timeout
         self._targets_manager = TargetsManager(timeout, port, host=host, domains=domains)
         if attach:
             self.switch_target()
@@ -291,3 +292,12 @@ class ChromeInterface(object):
 
     def reload(self):
         return self.execute("Page", "reload")
+
+    @contextlib.contextmanager
+    def service_worker(self, service_script_name):
+        target = self._targets_manager.get_service_worker(service_script_name)
+        target.attach()
+        try:
+            yield target
+        finally:
+            target.detach()

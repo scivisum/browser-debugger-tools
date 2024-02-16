@@ -15,7 +15,7 @@ from browserdebuggertools.exceptions import (
     DevToolsException,
     DomainNotEnabledError, DevToolsTimeoutException, MethodNotFoundError,
     InvalidParametersError, WebSocketBlockedException, MessagingThreadIsDeadError,
-    MaxRetriesException, ResourceNotFoundError, TargetNotAttachedError
+    MaxRetriesException, ResourceNotFoundError, TargetNotAttachedError, TargetNotFoundError
 )
 from browserdebuggertools.targets_manager import (
     _WSSessionManager, _WSMessageProducer, TargetsManager, _Target, _DOMManager
@@ -1061,7 +1061,7 @@ class Test_TargetsManager__create_tab:
 
 
 @patch(MODULE_PATH + "requests")
-class Test_TargetsManager__create_tab(WSMessageProducerTest):
+class Test_TargetsManager__create_tab(unittest.TestCase):
 
     def setUp(self):
         self._targets_manager = TargetsManager(10, 9222)
@@ -1083,6 +1083,48 @@ class Test_TargetsManager__create_tab(WSMessageProducerTest):
 
         with self.assertRaises(DevToolsException):
             self._targets_manager._create_tab()
+
+
+class Test_TargetsManager_get_service_worker(unittest.TestCase):
+
+    def setUp(self):
+        self._targets_manager = TargetsManager(10, 9222)
+        self._targets_manager._get_targets = MagicMock()
+        self._targets_manager._get_targets.return_value = [
+            {
+                "description": "",
+                "devtoolsFrontendUrl":
+                    "/devtools/inspector.html?ws=172.17.0.2:10000/devtools/page/extension-id",
+                "id": "extension-id",
+                "title": "Service Worker chrome-extension://..../service.js",
+                "type": "service_worker",
+                "url": "chrome-extension://..../service.js",
+                "webSocketDebuggerUrl": "ws://172.17.0.2:10000/devtools/page/extension-ID"
+            },
+            {
+                "description": "",
+                "devtoolsFrontendUrl":
+                    "/devtools/inspector.html?ws=172.17.0.2:10001/devtools/page/other-extension-id",
+                "id": "other-extension-id",
+                "title": "Service Worker chrome-extension://ih...gi/other-service.js",
+                "type": "service_worker",
+                "url": "chrome-extension://ih...gi/other-service.js",
+                "webSocketDebuggerUrl": "ws://172.17.0.2:10000/devtools/page/other-extension-id"
+            }
+        ]
+
+    def test(self):
+        self.assertEqual(
+            "extension-id", self._targets_manager.get_service_worker("service.js").id
+        )
+        self.assertEqual(
+            "other-extension-id", self._targets_manager.get_service_worker("other-service.js").id
+        )
+
+    def test_target_not_found(self):
+        with self.assertRaises(TargetNotFoundError):
+            self._targets_manager.get_service_worker("not-installed")
+
 
 
 class DOMManagerTest(TestCase):
