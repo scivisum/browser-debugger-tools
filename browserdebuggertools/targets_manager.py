@@ -19,7 +19,7 @@ from browserdebuggertools.exceptions import (
     DevToolsTimeoutException, DomainNotEnabledError,
     MethodNotFoundError, UnknownError, ResourceNotFoundError, MessagingThreadIsDeadError,
     InvalidParametersError, WebSocketBlockedException,
-    TargetNotAttachedError
+    TargetNotAttachedError, TargetNotFoundError
 )
 
 
@@ -215,6 +215,12 @@ class _Target:
 
     def detach(self):
         self.wsm.close()
+
+
+class ServiceWorkerTarget(_Target):
+
+    def __init__(self, info: dict, timeout):
+        super().__init__(info, timeout)
 
 
 class EventHandlers(NamedTuple):
@@ -675,3 +681,19 @@ class TargetsManager:
         return requests.put(
             f"http://{self._host}:{self._port}/json/new", timeout=self._connection_timeout
         )
+
+    def get_service_worker(self, service_script_name):
+
+        def find_target_info():
+            for target in self._get_targets():
+                if (
+                    target["type"] == "service_worker"
+                    and target["url"].endswith(service_script_name)
+                ):
+                    return target
+
+        targetInfo = find_target_info()
+        if targetInfo:
+            return ServiceWorkerTarget(targetInfo, self._connection_timeout)
+        else:
+            raise TargetNotFoundError(service_script_name)
