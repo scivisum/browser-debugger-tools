@@ -1,9 +1,9 @@
+import re
 from unittest import TestCase
-
 from unittest.mock import patch, MagicMock
 
 from browserdebuggertools.chrome.interface import ChromeInterface
-from browserdebuggertools.exceptions import TargetNotFoundError
+from browserdebuggertools.exceptions import TargetNotFoundError, JavascriptError
 
 MODULE_PATH = "browserdebuggertools.chrome.interface."
 
@@ -25,9 +25,53 @@ class Test_ChromeInterface_execute_javascript(ChromeInterfaceTest):
         result = self.interface.execute_javascript("document.readyState", foo="baa", x=2)
 
         mockExecute.assert_called_once_with(
-            "Runtime", "evaluate", {"expression": "document.readyState", "foo": "baa", "x": 2}
+            "Runtime", "evaluate",
+            {
+                "expression": "document.readyState",
+                "foo": "baa", "x": 2, "returnByValue": True
+            }
         )
         self.assertEqual(mock_result, result)
+
+    def test_value_error(self, mockExecute):
+        mock_result = MagicMock()
+        mockExecute.return_value = {"id": 1, "result": {"value": mock_result}}
+
+        with self.assertRaisesRegex(
+                ValueError,
+                re.escape(
+                    "If want returnByValue as False, "
+                    "use .execute('runtime', 'evaluate', "
+                    "{'expression': 'document.readyState', returnByValue: False}) directly"
+                )
+        ):
+            self.interface.execute_javascript(
+                "document.readyState", returnByValue=False
+            )
+
+        self.assertFalse(mockExecute.called)
+
+    def test_javascript_error(self, mockExecute):
+        mockExecute.return_value = {
+            "result": {
+                "type": "object",
+                "subtype": "error",
+                "className": "SyntaxError",
+                "description": "SyntaxError: Unexpected identifier 'and'",
+                "objectId": "1297274167796877720.2.1"
+            }
+        }
+
+        with self.assertRaises(JavascriptError):
+            self.interface.execute_javascript("garbage and stuff", foo="baa", x=2)
+
+        mockExecute.assert_called_once_with(
+            "Runtime", "evaluate",
+            {
+                "expression": "garbage and stuff",
+                "foo": "baa", "x": 2, "returnByValue": True
+            }
+        )
 
 
 class Test_ChromeInterface_switch_target(ChromeInterfaceTest):

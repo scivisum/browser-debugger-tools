@@ -4,7 +4,7 @@ from base64 import b64decode, b64encode
 from typing import Optional
 
 from browserdebuggertools import models
-from browserdebuggertools.exceptions import TargetNotFoundError
+from browserdebuggertools.exceptions import TargetNotFoundError, JavascriptError
 from browserdebuggertools.targets_manager import TargetsManager
 
 logging.basicConfig(format='%(levelname)s:%(message)s')
@@ -151,11 +151,22 @@ class ChromeInterface:
         return self.execute("Page", "stopLoading")
 
     def execute_javascript(self, script, **kwargs):
+        if "returnByValue" in kwargs:
+            if not kwargs["returnByValue"]:
+                raise ValueError(
+                    "If want returnByValue as False, "
+                    f"use .execute('runtime', 'evaluate', "
+                    f"{{'expression': '{script}', returnByValue: False}}) directly"
+                )
         params = {
             "expression": script,
+            "returnByValue": True
         }
         params.update(kwargs)
+
         result = self.execute("Runtime", "evaluate", params)["result"]
+        if result.get("subtype") == "error":
+            raise JavascriptError(f"{result['description']}")
 
         return result.get("value")
 
