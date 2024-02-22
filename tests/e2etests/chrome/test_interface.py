@@ -563,9 +563,15 @@ class SwitchTabTest(ChromeInterfaceTest):
 
         # Block any new document requests and open url in a new tab
         self.devtools_client.block_main_frames()
-        self.devtools_client.execute_javascript(
-            f"window.open('http://localhost:{self.testSite.port}/simple_page_2', '_blank')",
-            returnByValue=False, userGesture=True
+        # In Chrome 112 for some reason we can't specify useGesture and returnByValue at the same
+        # time, if we do we get an 'Object reference chain is too long' error.
+        # So don't use execute_javascript which insists on setting returnByValue.
+        self.devtools_client.execute(
+            "Runtime", "evaluate",
+            {
+                "expression": f"window.open('http://localhost:{self.testSite.port}/simple_page_2', '_blank')",
+                "userGesture": True
+            }
         )
 
         # Initially the title of the new tab is equal to the URL, but if we wait a bit it will

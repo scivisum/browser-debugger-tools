@@ -41,6 +41,10 @@ class JavascriptDialogNotFoundError(NotFoundError):
     pass
 
 
+class JavascriptError(DevToolsException):
+    pass
+
+
 class MaxRetriesException(DevToolsException):
     pass
 
