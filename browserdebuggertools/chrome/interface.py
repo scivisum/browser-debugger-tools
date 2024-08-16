@@ -263,35 +263,23 @@ class ChromeInterface:
         """
          Don't let the browser load any main frames (i.e. page loads and iframes)
         """
-        extension_id = self.execute_javascript(
-            'localStorage.getItem("requestBlockerExtensionID")',
-            returnByValue=True
-        )
-        self.execute_javascript(
-            f'chrome.runtime.sendMessage("{extension_id}",'
-            '{method: "blockMainFrames"})',
-            returnByValue=True,
-            awaitPromise=True
-        )
-        # todo can we get a return value, so we can tell if it has worked?
-        #  we don't seem to be getting a value returned at the moment
+        with self.service_worker("requestBlocker.js") as requestBlockerExtension:
+            requestBlockerExtension.wsm.execute("Runtime", "evaluate", {
+                "expression": "blockNewWindowMainFrames",
+                "returnByValue": True,
+                "awaitPromise": False
+            })
 
     def unblock_main_frames(self):
         """
         Stop blocking main frames
         """
-        extension_id = self.execute_javascript(
-            'localStorage.getItem("requestBlockerExtensionID")',
-            returnByValue=True
-        )
-        self.execute_javascript(
-            f'chrome.runtime.sendMessage("{extension_id}",'
-            '{method: "unblockMainFrames"})',
-            returnByValue=True,
-            awaitPromise=True
-        )
-        # todo can we get a return value, so we can tell if it has worked?
-        #  we don't seem to be getting a value returned at the moment
+        with self.service_worker("requestBlocker.js") as requestBlockerExtension:
+            requestBlockerExtension.wsm.execute("Runtime", "evaluate", {
+                "expression": "unblockAllMainFrames()",
+                "returnByValue": True,
+                "awaitPromise": False
+            })
 
     def get_all_events(self, domain, clear=False):
         """ Retrieves all events for a given domain for all targets
