@@ -1,44 +1,28 @@
-function blockMainFrames() {
-    chrome.declarativeNetRequest.updateEnabledRulesets(
-        {
-      disableRulesetIds: [],
-      enableRulesetIds:["blockMainFrames"]
-        },
-        () => {console.log("Blocked main frames")}
-    );
+let windowIDs = [];
+
+function recordNewWindowIDs(window) {
+    windowIDs.append(window.id);
 }
 
-
-function unblockMainFrames() {
-    chrome.declarativeNetRequest.updateEnabledRulesets(
-        {
-      disableRulesetIds: ["blockMainFrames"],
-      enableRulesetIds:[]
-        },
-        () => {console.log("unblocked main frames")}
-    );
+function blockNewWindowMainFrames() {
+    windowIDs = [];
+    chrome.windows.onCreated.addListener(recordNewWindowIDs);
 }
 
+function unblockAllMainFrames() {
+    windowIDs = [];
+    chrome.windows.onCreated.removeListener(recordNewWindowIDs);
+}
 
-chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-    if (request.method === "getExtensionID") {
-        sendResponse({result: chrome.runtime.id});
-    }
-    else {
-        sendResponse({result: "error", message: "Unexpected method: " + request.method});
-    }
-});
-
-
-chrome.runtime.onMessageExternal.addListener((request, sender, sendResponse) => {
-   if (request.method === "blockMainFrames") {
-        blockMainFrames();
-        sendResponse({result: "success"});
-    }
-    else if (request.method === "unblockMainFrames") {
-        unblockMainFrames();
-        sendResponse({result: "success"});
-    } else {
-        sendResponse({result: "error", message: "Unexpected method: " + request.method});
-   }
-});
+chrome.webRequest.onBeforeRequest.addListener(
+  (details) => {
+    // Get the window ID for the current request
+    chrome.tabs.get(details.tabId, (tab) => {
+      if (windowIDs.includes(tab.windowId)) {
+        return { cancel: true };
+      }
+    });
+  },
+  { urls: ["<all_urls>"], types: ["main_frame"] },
+  ["blocking"]
+);

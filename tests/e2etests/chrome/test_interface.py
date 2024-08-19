@@ -574,23 +574,20 @@ class SwitchTabTest(ChromeInterfaceTest):
             }
         )
 
-        # Initially the title of the new tab is equal to the URL, but if we wait a bit it will
-        # change to 'localhost' for a blocked request
+        # The latest version of blocking,
+        # does not change the title to 'localhost' for blocked requests
         time.sleep(1)
         new_target_id, new_target = [
             (target_id, target) for target_id, target in self.devtools_client.targets.items() if
             target.info["url"].endswith("/simple_page_2")
         ].pop()
         url = new_target.info["url"]
-        self.assertEqual("localhost", new_target.info["title"])
+        self.assertEqual("Simple Page 2", new_target.info["title"])
 
         # Switch to the new tab and enable the Network domain for it
         self.devtools_client.switch_target(new_target_id)
         self.devtools_client.enable_domain("Network")
-        self.assertIn(
-            '"details":"Details","errorCode":"ERR_BLOCKED_BY_CLIENT"',
-            self.devtools_client.get_page_source()
-        )
+        # New blocking system does not show ERR_BLOCKED_BY_CLIENT in the page
 
         # Switch back to the original tab and unblock requests, then back to the new tab
         self.devtools_client.switch_target(original_target_id)
