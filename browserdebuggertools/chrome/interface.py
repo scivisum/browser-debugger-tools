@@ -265,9 +265,9 @@ class ChromeInterface:
         """
         with self.service_worker("requestBlocker.js") as requestBlockerExtension:
             requestBlockerExtension.wsm.execute("Runtime", "evaluate", {
-                "expression": "blockNewWindowMainFrames",
+                "expression": "blockNewWindowMainFrames()",
                 "returnByValue": True,
-                "awaitPromise": False
+                "awaitPromise": True
             })
 
     def unblock_main_frames(self):
