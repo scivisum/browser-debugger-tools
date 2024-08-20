@@ -4,12 +4,11 @@
   "description": "Request Blocker",
   "version": "1.0",
   "permissions": [
-    "webRequest",
-    "webRequestBlocking",
+    "declarativeNetRequest",
     "tabs",
     "windows"
   ],
-   "host_permissions": ["<all_urls>"],
+  "host_permissions": ["<all_urls>"],
   "background": {
     "service_worker": "requestBlocker.js"
   }
