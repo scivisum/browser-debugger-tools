@@ -11,7 +11,7 @@ PACKAGES = find_packages(include="browserdebuggertools*")
 
 setup(
     name="browserdebuggertools",
-    version="6.2.3",
+    version="6.2.4",
     python_requires='>=3.8',
     include_package_data=True,
     packages=PACKAGES,
