@@ -1,6 +1,6 @@
 import re
 from unittest import TestCase
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch, MagicMock, call
 
 from browserdebuggertools.chrome.interface import ChromeInterface
 from browserdebuggertools.exceptions import TargetNotFoundError, JavascriptError
@@ -131,3 +131,183 @@ class Test_ChromeInterface_service_worker(ChromeInterfaceTest):
             self.assertFalse(service_worker.detach.called)
 
         service_worker.detach.assert_called_once_with()
+
+
+class Test_ChromeInterface_block_main_frames(TestCase):
+
+    def test_extensions_enabled(self):
+        extensionFiles = [
+            "foo/bar.crx",
+            "baz/requestBlocker.crx"
+        ]
+        with patch(MODULE_PATH + "TargetsManager", MagicMock()):
+            interface = ChromeInterface(1234, "localhost", attach=False, extensionFiles=extensionFiles)
+
+        service_worker = MagicMock()
+        interface._targets_manager.get_service_worker.return_value = service_worker
+
+        interface.block_main_frames()
+
+        self.assertEqual([
+            call.attach(),
+            call.wsm.execute(
+                "Runtime",
+                "evaluate",
+                {
+                    "expression": "blockNewWindowMainFrames()",
+                    "returnByValue": True,
+                    "awaitPromise": True
+                }
+            ),
+            call.detach(),
+        ], service_worker.mock_calls)
+        interface._targets_manager.get_service_worker.assert_called_once_with("requestBlocker.js")
+
+    def test_no_extensions(self):
+        with patch(MODULE_PATH + "TargetsManager", MagicMock()):
+            interface = ChromeInterface(1234, "localhost", attach=False)
+
+        interface._targets_manager.get_service_worker = MagicMock()
+
+        with self.assertRaisesRegex(
+            Exception,
+            "requestBlocker extension is disabled, to enable set ENABLE_EXTENSIONS to True in your user journey"
+        ):
+            interface.block_main_frames()
+
+        interface._targets_manager.get_service_worker.assert_not_called()
+
+    def test_requestBlocker_extension_is_missing(self):
+        extensionFiles = ["foo/bar.crx",]
+        with patch(MODULE_PATH + "TargetsManager", MagicMock()):
+            interface = ChromeInterface(1234, "localhost", attach=False, extensionFiles=extensionFiles)
+
+        interface._targets_manager.get_service_worker = MagicMock()
+
+        with self.assertRaisesRegex(Exception, "requestBlocker extension is missing"):
+            interface.block_main_frames()
+
+        interface._targets_manager.get_service_worker.assert_not_called()
+
+
+class Test_ChromeInterface_unblock_main_frames(TestCase):
+
+    def test(self):
+        extensionFiles = [
+            "foo/bar.crx",
+            "baz/requestBlocker.crx"
+        ]
+        with patch(MODULE_PATH + "TargetsManager", MagicMock()):
+            interface = ChromeInterface(1234, "localhost", attach=False, extensionFiles=extensionFiles)
+
+        service_worker = MagicMock()
+        interface._targets_manager.get_service_worker.return_value = service_worker
+
+        interface.unblock_main_frames()
+
+        self.assertEqual([
+            call.attach(),
+            call.wsm.execute(
+                "Runtime",
+                "evaluate",
+                {
+                    "expression": "unblockAllMainFrames()",
+                    "returnByValue": True,
+                    "awaitPromise": False
+                }
+            ),
+            call.detach(),
+        ], service_worker.mock_calls)
+        interface._targets_manager.get_service_worker.assert_called_once_with("requestBlocker.js")
+
+
+class Test_ChromeInterface_main_frames_blocked(TestCase):
+
+    def test_ok(self):
+        extensionFiles = [
+            "foo/bar.crx",
+            "baz/requestBlocker.crx"
+        ]
+        with patch(MODULE_PATH + "TargetsManager", MagicMock()):
+            interface = ChromeInterface(1234, "localhost", attach=False, extensionFiles=extensionFiles)
+
+        doSomething = MagicMock()
+        service_worker = MagicMock()
+        interface._targets_manager.get_service_worker.return_value = service_worker
+        mockManager = MagicMock()
+        mockManager.attach_mock(service_worker, "service_worker")
+        mockManager.attach_mock(doSomething, "doSomething")
+
+        with interface.main_frames_blocked():
+            doSomething()
+
+        self.assertEqual([
+            call.service_worker.attach(),
+            call.service_worker.wsm.execute(
+                "Runtime",
+                "evaluate",
+                {
+                    "expression": "blockNewWindowMainFrames()",
+                    "returnByValue": True,
+                    "awaitPromise": True
+                }
+            ),
+            call.service_worker.detach(),
+            call.doSomething(),
+            call.service_worker.attach(),
+            call.service_worker.wsm.execute(
+                "Runtime",
+                "evaluate",
+                {
+                    "expression": "unblockAllMainFrames()",
+                    "returnByValue": True,
+                    "awaitPromise": False
+                }
+            ),
+            call.service_worker.detach(),
+        ], mockManager.mock_calls)
+
+    def test_also_unblock_on_error(self):
+        extensionFiles = [
+            "foo/bar.crx",
+            "baz/requestBlocker.crx"
+        ]
+        with patch(MODULE_PATH + "TargetsManager", MagicMock()):
+            interface = ChromeInterface(1234, "localhost", attach=False, extensionFiles=extensionFiles)
+
+        doSomething = MagicMock(side_effect=Exception("boom!"))
+        service_worker = MagicMock()
+        interface._targets_manager.get_service_worker.return_value = service_worker
+        mockManager = MagicMock()
+        mockManager.attach_mock(service_worker, "service_worker")
+        mockManager.attach_mock(doSomething, "doSomething")
+
+        with self.assertRaisesRegex(Exception, "boom!"):
+            with interface.main_frames_blocked():
+                doSomething()
+
+        self.assertEqual([
+            call.service_worker.attach(),
+            call.service_worker.wsm.execute(
+                "Runtime",
+                "evaluate",
+                {
+                    "expression": "blockNewWindowMainFrames()",
+                    "returnByValue": True,
+                    "awaitPromise": True
+                }
+            ),
+            call.service_worker.detach(),
+            call.doSomething(),
+            call.service_worker.attach(),
+            call.service_worker.wsm.execute(
+                "Runtime",
+                "evaluate",
+                {
+                    "expression": "unblockAllMainFrames()",
+                    "returnByValue": True,
+                    "awaitPromise": False
+                }
+            ),
+            call.service_worker.detach(),
+        ], mockManager.mock_calls)

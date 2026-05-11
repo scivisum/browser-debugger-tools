@@ -27,7 +27,8 @@ class ChromeInterface:
         host: str = "localhost",
         timeout: int = 30,
         domains: Optional[dict] = None,
-        attach: bool = True
+        attach: bool = True,
+        extensionFiles: list[str] = None
     ):
         """ Initialises the interface starting the websocket connection and enabling
             a series of domains.
@@ -39,11 +40,13 @@ class ChromeInterface:
             is a dictionary of the arguments passed with the domain upon enabling.
         :param attach: If set to true, the interface will attach to the first page target found.
             If there are no  page targets, a new tab will be created.
+        :param extensionFiles: extensions loaded to the browser in this session
         """
         self._timeout = timeout
         self._targets_manager = TargetsManager(timeout, port, host=host, domains=domains)
         if attach:
             self.switch_target()
+        self._extensionFiles = extensionFiles or []
 
     @property
     def targets(self):
@@ -259,10 +262,29 @@ class ChromeInterface:
         """
         return self._targets_manager.get_page_source()
 
+    @property
+    def _requestBlocker_is_loaded(self) -> bool:
+        for path in self._extensionFiles:
+            if path.endswith("/requestBlocker.crx"):
+                return True
+        return False
+
     def block_main_frames(self):
         """
          Don't let the browser load any main frames (i.e. page loads and iframes)
         """
+        if not self._requestBlocker_is_loaded:
+            if not self._extensionFiles:
+                raise Exception(
+                    "requestBlocker extension is disabled, "
+                    "to enable set ENABLE_EXTENSIONS to True in your user journey"
+                )
+            else:
+                # Currently, our journeys load all supported Chrome extensions if ENABLE_EXTENSIONS = True,
+                # or none of them if ENABLE_EXTENSIONS = False.
+                # Just in case, future-proof this check, in case it's only the requestBlocker extension that's missing.
+                raise Exception("requestBlocker extension is missing")
+
         with self.service_worker("requestBlocker.js") as requestBlockerExtension:
             requestBlockerExtension.wsm.execute("Runtime", "evaluate", {
                 "expression": "blockNewWindowMainFrames()",
@@ -280,6 +302,14 @@ class ChromeInterface:
                 "returnByValue": True,
                 "awaitPromise": False
             })
+
+    @contextlib.contextmanager
+    def main_frames_blocked(self):
+        self.block_main_frames()
+        try:
+            yield
+        finally:
+            self.unblock_main_frames()
 
     def get_all_events(self, domain, clear=False):
         """ Retrieves all events for a given domain for all targets
