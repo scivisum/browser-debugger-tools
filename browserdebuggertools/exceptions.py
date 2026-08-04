@@ -45,6 +45,16 @@ class JavascriptError(DevToolsException):
     pass
 
 
+class NoSWError(DevToolsException):
+    """ Raised when an extension's MV3 service worker has been evicted by Chrome and is gone.
+
+        Talking to it over the DevTools protocol fails with "Error: No SW". The worker
+        self-heals via a chrome.alarms keep-alive, so callers can retry to pick up the
+        re-spawned worker.
+    """
+    pass
+
+
 class MaxRetriesException(DevToolsException):
     pass
 

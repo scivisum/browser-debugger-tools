@@ -1,13 +1,21 @@
 import contextlib
 import logging
+import time
 from base64 import b64decode, b64encode
 from typing import Optional
 
 from browserdebuggertools import models
-from browserdebuggertools.exceptions import TargetNotFoundError, JavascriptError
+from browserdebuggertools.exceptions import NoSWError, TargetNotFoundError, JavascriptError
 from browserdebuggertools.targets_manager import TargetsManager
 
 logging.basicConfig(format='%(levelname)s:%(message)s')
+
+
+# RD-55085 How long we keep re-discovering and re-running against an extension service worker
+# that has been evicted. The worker self-heals via a chrome.alarms keep-alive (see
+# requestBlocker.js), but a re-spawn can take up to one alarm period, so the recovery window
+# must be long enough to outlast that and pick up the freshly re-spawned worker.
+_SERVICE_WORKER_RECOVERY_TIMEOUT = 35
 
 
 class ChromeInterface:
@@ -47,6 +55,9 @@ class ChromeInterface:
         if attach:
             self.switch_target()
         self._extensionFiles = extensionFiles or []
+        # RD-55085 Overridable per-instance (e.g. shortened in tests) recovery window used when
+        # an extension service worker has been evicted and needs to self-heal before we retry.
+        self._service_worker_recovery_timeout = _SERVICE_WORKER_RECOVERY_TIMEOUT
 
     @property
     def targets(self):
@@ -285,23 +296,52 @@ class ChromeInterface:
                 # Just in case, future-proof this check, in case it's only the requestBlocker extension that's missing.
                 raise Exception("requestBlocker extension is missing")
 
-        with self.service_worker("requestBlocker.js") as requestBlockerExtension:
-            requestBlockerExtension.wsm.execute("Runtime", "evaluate", {
-                "expression": "blockNewWindowMainFrames()",
-                "returnByValue": True,
-                "awaitPromise": True
-            })
+        self._run_in_request_blocker_service_worker(
+            "blockNewWindowMainFrames()", await_promise=True
+        )
 
     def unblock_main_frames(self):
         """
         Stop blocking main frames
         """
-        with self.service_worker("requestBlocker.js") as requestBlockerExtension:
-            requestBlockerExtension.wsm.execute("Runtime", "evaluate", {
-                "expression": "unblockAllMainFrames()",
-                "returnByValue": True,
-                "awaitPromise": False
-            })
+        self._run_in_request_blocker_service_worker(
+            "unblockAllMainFrames()", await_promise=False
+        )
+
+    def _run_in_request_blocker_service_worker(self, expression, await_promise):
+        # RD-55085 The requestBlocker extension's MV3 service worker can be evicted by Chrome
+        # (e.g. under memory/CPU pressure on loaded CI machines). When that happens, evaluating
+        # against it fails with "Error: No SW", and the (now dead) target may also disappear.
+        # The worker self-heals via a chrome.alarms keep-alive (see requestBlocker.js), so we
+        # keep re-discovering and re-running until the re-spawned worker responds, giving up
+        # after the recovery timeout.
+        deadline = time.monotonic() + self._service_worker_recovery_timeout
+        while True:
+            try:
+                with self.service_worker("requestBlocker.js") as requestBlockerExtension:
+                    response = requestBlockerExtension.wsm.execute("Runtime", "evaluate", {
+                        "expression": expression,
+                        "returnByValue": True,
+                        "awaitPromise": await_promise
+                    })
+                    self._raise_for_no_sw_error(response)
+                    return response
+            except (TargetNotFoundError, NoSWError):
+                if time.monotonic() >= deadline:
+                    raise
+                logging.info("failed to run in requestBlocker service worker, retrying in 0.5s...")
+                time.sleep(0.5)
+
+    @staticmethod
+    def _raise_for_no_sw_error(response):
+        # RD-55085 "Error: No SW" means Chrome evicted the extension's service worker.
+        if (
+            response
+            .get("exceptionDetails", {})
+            .get("exception", {})
+            .get("description")
+        ) == "Error: No SW":
+            raise NoSWError("The requestBlocker service worker is gone")
 
     @contextlib.contextmanager
     def main_frames_blocked(self):

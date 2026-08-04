@@ -6,7 +6,8 @@
   "permissions": [
     "declarativeNetRequest",
     "tabs",
-    "windows"
+    "windows",
+    "alarms" // Used to keep/wake the service worker (self-healing keep-alive)
   ],
   "host_permissions": ["<all_urls>"],
   "background": {

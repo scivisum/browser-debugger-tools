@@ -3,7 +3,7 @@ from unittest import TestCase
 from unittest.mock import patch, MagicMock, call
 
 from browserdebuggertools.chrome.interface import ChromeInterface
-from browserdebuggertools.exceptions import TargetNotFoundError, JavascriptError
+from browserdebuggertools.exceptions import NoSWError, TargetNotFoundError, JavascriptError
 
 MODULE_PATH = "browserdebuggertools.chrome.interface."
 
@@ -145,6 +145,7 @@ class Test_ChromeInterface_block_main_frames(TestCase):
 
         service_worker = MagicMock()
         interface._targets_manager.get_service_worker.return_value = service_worker
+        service_worker.wsm.execute.return_value = {"result": {"type": "undefined"}}
 
         interface.block_main_frames()
 
@@ -190,6 +191,68 @@ class Test_ChromeInterface_block_main_frames(TestCase):
         interface._targets_manager.get_service_worker.assert_not_called()
 
 
+class Test_ChromeInterface_service_worker_recovery(TestCase):
+
+    _NO_SW_RESPONSE = {
+        "exceptionDetails": {
+            "exception": {
+                "className": "Error",
+                "description": "Error: No SW",
+                "subtype": "error",
+                "type": "object"
+            },
+            "text": "Uncaught (in promise) Error: No SW"
+        }
+    }
+
+    def _make_interface(self):
+        extensionFiles = ["baz/requestBlocker.crx"]
+        with patch(MODULE_PATH + "TargetsManager", MagicMock()):
+            interface = ChromeInterface(
+                1234, "localhost", attach=False, extensionFiles=extensionFiles
+            )
+        # Keep the recovery window short so the eventually-fail test stays fast.
+        interface._service_worker_recovery_timeout = 0.3
+        return interface
+
+    def test_retry_on_NoSWError_ok(self):
+        interface = self._make_interface()
+        service_worker = MagicMock()
+        interface._targets_manager.get_service_worker.return_value = service_worker
+        # First the service worker is gone, then it has been resurrected and the call succeeds.
+        service_worker.wsm.execute.side_effect = [
+            self._NO_SW_RESPONSE,
+            {"result": {"type": "undefined"}},
+        ]
+
+        interface.block_main_frames()
+
+        self.assertEqual(2, service_worker.wsm.execute.call_count)
+
+    def test_NoSWError_is_retried_and_eventually_fails(self):
+        interface = self._make_interface()
+        service_worker = MagicMock()
+        interface._targets_manager.get_service_worker.return_value = service_worker
+        service_worker.wsm.execute.return_value = self._NO_SW_RESPONSE
+
+        with self.assertRaises(NoSWError):
+            interface.block_main_frames()
+
+    def test_retry_on_TargetNotFoundError_ok(self):
+        interface = self._make_interface()
+        service_worker = MagicMock()
+        service_worker.wsm.execute.return_value = {"result": {"type": "undefined"}}
+        # First the worker target is missing (evicted), then it is found and the call succeeds.
+        interface._targets_manager.get_service_worker.side_effect = [
+            TargetNotFoundError(),
+            service_worker,
+        ]
+
+        interface.unblock_main_frames()
+
+        service_worker.wsm.execute.assert_called_once()
+
+
 class Test_ChromeInterface_unblock_main_frames(TestCase):
 
     def test(self):
@@ -202,6 +265,7 @@ class Test_ChromeInterface_unblock_main_frames(TestCase):
 
         service_worker = MagicMock()
         interface._targets_manager.get_service_worker.return_value = service_worker
+        service_worker.wsm.execute.return_value = {"result": {"type": "undefined"}}
 
         interface.unblock_main_frames()
 
@@ -234,6 +298,7 @@ class Test_ChromeInterface_main_frames_blocked(TestCase):
         doSomething = MagicMock()
         service_worker = MagicMock()
         interface._targets_manager.get_service_worker.return_value = service_worker
+        service_worker.wsm.execute.return_value = {"result": {"type": "undefined"}}
         mockManager = MagicMock()
         mockManager.attach_mock(service_worker, "service_worker")
         mockManager.attach_mock(doSomething, "doSomething")
@@ -278,6 +343,7 @@ class Test_ChromeInterface_main_frames_blocked(TestCase):
         doSomething = MagicMock(side_effect=Exception("boom!"))
         service_worker = MagicMock()
         interface._targets_manager.get_service_worker.return_value = service_worker
+        service_worker.wsm.execute.return_value = {"result": {"type": "undefined"}}
         mockManager = MagicMock()
         mockManager.attach_mock(service_worker, "service_worker")
         mockManager.attach_mock(doSomething, "doSomething")
