@@ -13,9 +13,11 @@ logging.basicConfig(format='%(levelname)s:%(message)s')
 
 # RD-55085 How long we keep re-discovering and re-running against an extension service worker
 # that has been evicted. The worker self-heals via a chrome.alarms keep-alive (see
-# requestBlocker.js), but a re-spawn can take up to one alarm period, so the recovery window
-# must be long enough to outlast that and pick up the freshly re-spawned worker.
-_SERVICE_WORKER_RECOVERY_TIMEOUT = 35
+# requestBlocker.js), but Chrome only fires that alarm on a ~30s period (and can be slower to
+# wake an evicted worker under load), so this window must comfortably exceed one alarm cycle.
+# 35s was too tight -- it expired right as the worker was about to come back -- so we give it two
+# cycles of headroom.
+_SERVICE_WORKER_RECOVERY_TIMEOUT = 70
 
 
 class ChromeInterface:
