@@ -1,9 +1,9 @@
 version: 2.1
 
 jobs:
-  unittests-py38:
+  unittests-py313:
     docker:
-      - image: python:3.8.16-bullseye
+      - image: python:3.13.6-bullseye
     steps:
       - run: git config --global --add safe.directory /tmp/_circleci_local_build_repo
       - run: git config --global url."https://github.com/".insteadOf "git@github.com:"
@@ -19,9 +19,9 @@ jobs:
       - checkout
       - run: pip install -r dev_requirements.txt
       - run: pytest tests/unittests --verbose --full-trace
-  integrationtests-py38:
+  integrationtests-py313:
     docker:
-      - image: python:3.8.16-bullseye
+      - image: python:3.13.6-bullseye
     steps:
       - run: git config --global --add safe.directory /tmp/_circleci_local_build_repo
       - run: git config --global url."https://github.com/".insteadOf "git@github.com:"
@@ -37,15 +37,6 @@ jobs:
       - checkout
       - run: pip install -r dev_requirements.txt
       - run: pytest tests/integrationtests --verbose --full-trace
-  e2etests-chrome106-py38:
-    docker:
-      - image: matseymour/chrome-python:106.0.5249.61-3.8.16
-    steps:
-      - run: git config --global --add safe.directory /tmp/_circleci_local_build_repo
-      - run: git config --global url."https://github.com/".insteadOf "git@github.com:"
-      - checkout
-      - run: pip install -r dev_requirements.txt
-      - run: tini -s -- xvfb-run pytest tests/e2etests --verbose --full-trace
   e2etests-chrome112-py311:
     docker:
       - image: matseymour/chrome-python:112.0.5615.121-3.11.3
@@ -58,9 +49,8 @@ jobs:
 workflows:
   test:
     jobs:
-      - unittests-py38
+      - unittests-py313
       - unittests-py311
-      - integrationtests-py38
+      - integrationtests-py313
       - integrationtests-py311
-      - e2etests-chrome106-py38
       - e2etests-chrome112-py311
