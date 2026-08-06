@@ -65,7 +65,7 @@ class ChromeInterfaceTest(ABC):
             time.sleep(3)
 
             try:
-                cls.devtools_client = ChromeInterface(devtools_port)
+                cls.devtools_client = ChromeInterface(devtools_port, extensionFiles=["baz/requestBlocker.crx"])
                 break
 
             except ConnectionError:
