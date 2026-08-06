@@ -6,6 +6,7 @@ jobs:
       - image: python:3.8.16-bullseye
     steps:
       - run: git config --global --add safe.directory /tmp/_circleci_local_build_repo
+      - run: git config --global url."https://github.com/".insteadOf "git@github.com:"
       - checkout
       - run: pip install -r dev_requirements.txt
       - run: pytest tests/unittests --verbose --full-trace
@@ -14,6 +15,7 @@ jobs:
       - image: python:3.11.3-bullseye
     steps:
       - run: git config --global --add safe.directory /tmp/_circleci_local_build_repo
+      - run: git config --global url."https://github.com/".insteadOf "git@github.com:"
       - checkout
       - run: pip install -r dev_requirements.txt
       - run: pytest tests/unittests --verbose --full-trace
@@ -22,6 +24,7 @@ jobs:
       - image: python:3.8.16-bullseye
     steps:
       - run: git config --global --add safe.directory /tmp/_circleci_local_build_repo
+      - run: git config --global url."https://github.com/".insteadOf "git@github.com:"
       - checkout
       - run: pip install -r dev_requirements.txt
       - run: pytest tests/integrationtests --verbose --full-trace
@@ -30,6 +33,7 @@ jobs:
       - image: python:3.11.3-bullseye
     steps:
       - run: git config --global --add safe.directory /tmp/_circleci_local_build_repo
+      - run: git config --global url."https://github.com/".insteadOf "git@github.com:"
       - checkout
       - run: pip install -r dev_requirements.txt
       - run: pytest tests/integrationtests --verbose --full-trace
@@ -38,6 +42,7 @@ jobs:
       - image: matseymour/chrome-python:106.0.5249.61-3.8.16
     steps:
       - run: git config --global --add safe.directory /tmp/_circleci_local_build_repo
+      - run: git config --global url."https://github.com/".insteadOf "git@github.com:"
       - checkout
       - run: pip install -r dev_requirements.txt
       - run: tini -s -- xvfb-run pytest tests/e2etests --verbose --full-trace
@@ -46,6 +51,7 @@ jobs:
       - image: matseymour/chrome-python:112.0.5615.121-3.11.3
     steps:
       - run: git config --global --add safe.directory /tmp/_circleci_local_build_repo
+      - run: git config --global url."https://github.com/".insteadOf "git@github.com:"
       - checkout
       - run: pip install -r dev_requirements.txt
       - run: tini -s -- xvfb-run pytest tests/e2etests --verbose --full-trace
