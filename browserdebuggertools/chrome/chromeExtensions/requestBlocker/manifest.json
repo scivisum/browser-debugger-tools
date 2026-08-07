@@ -6,7 +6,9 @@
   "permissions": [
     "declarativeNetRequest",
     "tabs",
-    "windows"
+    "windows",
+    "webRequest",
+    "webRequestAuthProvider"
   ],
   "host_permissions": ["<all_urls>"],
   "background": {
