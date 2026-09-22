@@ -442,6 +442,55 @@ class Test_WSSessionManager_execute(SessionManagerTest):
             self.session_manager.execute(MagicMock(), MagicMock(), None)
 
 
+@patch(MODULE_PATH + "websocket.send", MagicMock())
+class Test_WSSessionManager_execute_async(SessionManagerTest):
+
+    def test(self):
+        domain = "Page"
+        method = "navigate"
+
+        self.session_manager._send = MagicMock()
+        self.session_manager._next_result_id = 3
+
+        self.session_manager.execute_async(domain, method, None)
+
+        self.assertEqual(4, self.session_manager._next_result_id)
+        self.session_manager._send.assert_called_once_with({
+            "id": 4, "method": "%s.%s" % (domain, method), "params": {}
+        })
+
+
+class Test_WSSessionManager_get_result(SessionManagerTest):
+
+    def test_not_found(self):
+        self.session_manager._results = {1: {"id": 1, "foo": "bar"}}
+
+        result = self.session_manager.get_result(2)
+
+        self.assertIsNone(result)
+        self.assertEqual({1: {"id": 1, "foo": "bar"}}, self.session_manager._results)
+
+    def test_found(self):
+        self.session_manager._results = {
+            1: {"id": 1, "foo": "bar"},
+            2: {"id": 2, "spam": "eggs"}
+        }
+
+        result = self.session_manager.get_result(2)
+
+        self.assertEqual({"id": 2, "spam": "eggs"}, result)
+        self.assertEqual({1: {"id": 1, "foo": "bar"}}, self.session_manager._results)
+
+    def test_error_in_result(self):
+        self.session_manager._results = {
+            1: {"id": 1, "foo": "bar"},
+            2: {"id": 2, "error": {"code": -32602, "message": "boom!"}}
+        }
+
+        with self.assertRaises(InvalidParametersError):
+            self.session_manager.get_result(2)
+
+
 class Test_WSSessionManager_add_domain(SessionManagerTest):
 
     def test_new_domain(self):
