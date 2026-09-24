@@ -307,7 +307,8 @@ class _WSSessionManager:
         self._message_producer.start()
 
         for domain, params in self._domains.items():
-            self.enable_domain(domain, params)
+            if domain != "Fetch":
+                self.enable_domain(domain, params)
 
     def _send(self, data):
         self._send_queue.append(json.dumps(data, sort_keys=True))
