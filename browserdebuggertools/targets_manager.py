@@ -360,7 +360,12 @@ class _WSSessionManager:
     def execute(self, domain_name, method_name, params=None):
         result_id = self._execute(domain_name, method_name, params)
         result = self._wait_for_result(result_id)
-        if "error" in result:
+        self._raise_for_result_error(result)
+        return result
+
+    @staticmethod
+    def _raise_for_result_error(result):
+        if result and "error" in result:
             code = result["error"]["code"]
             message = result["error"]["message"]
             if code == -32000:
@@ -369,15 +374,10 @@ class _WSSessionManager:
                 raise MethodNotFoundError(message)
             if code == -32602:
                 raise InvalidParametersError(message)
-            raise UnknownError("DevTools Protocol error code %s: %s" % (code, message))
-        return result
+            raise UnknownError(f"DevTools Protocol error code {code}: {message}")
 
     def execute_async(self, domain_name, method_name, params=None):
         result_id = self._execute(domain_name, method_name, params)
-        # TODO: complete this method
-        # This isn't fully implemented as we don't have a method to retrieve results
-        # Also we'll need a smarter way to manage memory as there is the danger of regressing to
-        # this: https://github.com/scivisum/browser-debugger-tools/pull/20/
         return result_id
 
     def is_domain_enabled(self, domain):
@@ -458,6 +458,11 @@ class _WSSessionManager:
             logging.warning("Domain \"{}\" doesn't exist".format(domain_name))
         else:
             logging.info("Domain {} has been disabled".format(domain_name))
+
+    def get_result(self, result_id):
+        result = self._results.pop(result_id, None)
+        self._raise_for_result_error(result)
+        return result
 
 
 class _DOMManager:
@@ -606,8 +611,14 @@ class TargetsManager:
     def get_events(self, *args, **kwargs):
         return self.current_target.wsm.get_events(*args, **kwargs)
 
+    def get_result(self, *args, **kwargs):
+        return self.current_target.wsm.get_result(*args, **kwargs)
+
     def execute(self, *args, **kwargs):
         return self.current_target.wsm.execute(*args, **kwargs)
+
+    def execute_async(self, *args, **kwargs):
+        return self.current_target.wsm.execute_async(*args, **kwargs)
 
     def enable_domain(self, domain: str, parameters=None):
         self._domains[domain] = parameters or {}

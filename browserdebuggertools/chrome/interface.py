@@ -100,6 +100,14 @@ class ChromeInterface:
           """
         return self._targets_manager.get_events(domain, clear=clear)
 
+    def get_result(self, result_id):
+        """ Returns the result for the given `result_id` if available, or None.
+
+        If the result is available, it will remove it from the cache.
+        If the result contains an error, this method will raise an exception with the error details.
+        """
+        return self._targets_manager.get_result(result_id)
+
     def execute(self, domain, method, params=None):
         """ Executes a command against the current target and returns the result.
 
@@ -115,6 +123,13 @@ class ChromeInterface:
         :return: The result of the command
         """
         return self._targets_manager.execute(domain, method, params=params)
+
+    def execute_async(self, domain, method, params=None):
+        """ Executes a command against the current target.
+        It doesn't wait for the result.
+        It returns a result_id so callers can retrieve the result when available.
+        """
+        return self._targets_manager.execute_async(domain, method, params=params)
 
     def enable_domain(self, domain, params=None):
         """ Enables events for the given domain for the current target.
