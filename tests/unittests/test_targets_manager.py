@@ -491,6 +491,18 @@ class Test_WSSessionManager_get_result(SessionManagerTest):
             self.session_manager.get_result(2)
 
 
+class Test_WSSessionManager_clear_results(SessionManagerTest):
+
+    def test(self):
+        self.session_manager._results = {1: {"id": 1, "foo": "bar"}}
+        self.session_manager._next_result_id = 1
+
+        self.session_manager.clear_results()
+
+        self.assertEqual({}, self.session_manager._results)
+        self.assertEqual(1, self.session_manager._next_result_id)
+
+
 class Test_WSSessionManager_add_domain(SessionManagerTest):
 
     def test_new_domain(self):

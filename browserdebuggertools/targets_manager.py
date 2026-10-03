@@ -464,6 +464,9 @@ class _WSSessionManager:
         self._raise_for_result_error(result)
         return result
 
+    def clear_results(self):
+        self._results = {}
+
 
 class _DOMManager:
 
@@ -613,6 +616,9 @@ class TargetsManager:
 
     def get_result(self, *args, **kwargs):
         return self.current_target.wsm.get_result(*args, **kwargs)
+
+    def clear_results(self):
+        self.current_target.wsm.clear_results()
 
     def execute(self, *args, **kwargs):
         return self.current_target.wsm.execute(*args, **kwargs)
