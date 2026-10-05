@@ -108,6 +108,11 @@ class ChromeInterface:
         """
         return self._targets_manager.get_result(result_id)
 
+    def clear_results(self):
+        """ Clears all stored results in the current target's cache
+        """
+        self._targets_manager.clear_results()
+
     def execute(self, domain, method, params=None):
         """ Executes a command against the current target and returns the result.
 
